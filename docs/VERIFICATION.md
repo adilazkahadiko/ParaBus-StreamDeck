@@ -1,4 +1,4 @@
-# Initial Stage 3 verification
+# Stage 3 verification
 
 Verified locally on Windows, 2026-11-07 (JST). This report describes automated mock verification; it does not claim Stream Deck hardware or profile-export verification.
 
@@ -49,16 +49,26 @@ For every request: Bearer present and correct; Host exactly `127.0.0.1:<configur
 
 ## Automated checks
 
-Final automated result: **84 passed / 0 skipped / 0 failed**, 0 cancelled. Tests run without the Stream Deck app.
+Final automated result: **109 passed / 0 skipped / 0 failed**, 0 cancelled. Tests run without the Stream Deck app. All original 84 cases are retained; the assertions for DISABLED / close 4001 / close 4003 follow the maintainer's updated connection policy described below.
 
 - 12 mute cases cover fixed users, all/bus slots, buses and sends: operation/args, latest expectedMute, distinct UUIDs, and STALE current.mute correction without resend.
 - 40 fader cases cover participant/user/slot, Bus, Send and TX, up/down with 1/2/3/6 dB, exact relative args and displayed resulting dB.
 - Emergency ON is checked on repeated presses, with state display and no release operation.
-- INVALID/RATE_LIMITED and HTTP, WS upgrade, WS message authentication/disabled failures are checked. 401/DISABLED latch; explicit reconnect is needed. Rate limit honors Retry-After for new normal presses.
+- INVALID/RATE_LIMITED and HTTP, WS upgrade, WS message authentication/disabled failures are checked. 401 / close 4001 latch; DISABLED / close 4003 use fixed five-second probes. Rate limit honors Retry-After for new normal presses.
 - Backoff timing uses a deterministic clock: 1/2/4/8/16/30-second sequence, jitter bounds, retry growth, short-lived connection flapping and reset after 30 stable seconds. Instance changes refetch info/state. Old state revisions are ignored. Initial WS state timeout is covered.
 - Disconnect, stop and ambiguous HTTP action results never replay operations. Slots use current participantsRevision. Missing sends/users and NO_BOT never send. A second pending press is rejected, not queued. A late STALE response does not overwrite newer WS state or a newly configured target.
 - The production SDK bundle is spawned against a fake Stream Deck registration socket. All four actions are dispatched through the actual SDK. Action settings, outgoing PI payloads, titles, stdout/stderr and SDK log files are checked for the ephemeral token, including the SDK's malformed-message error path.
 - Inspector JavaScript runs in a DOM/WS harness: only the Stream Deck socket is opened; password input is cleared after send/disconnect; button-save messages exclude the token; inputs are validated; display names are rendered with textContent. The readDisplayNames permission gates name projection and names are never saved.
+
+### Disabled polling and press-to-connect update
+
+The maintainer explicitly changed the initial DISABLED-stop policy to accommodate ParaBus disabling external control at every startup. This client policy update does not change the read-only ParaBus contract or enable external control remotely.
+
+- DISABLED from HTTP /info, /state, WS upgrade, WS error, close 4003 or state.enabled=false enters fixed **5000 ms** polling. The display remains DISABLED, including during probes and temporary network failures. Every probe begins with GET /info; subsequent state/WS setup runs only after it succeeds. No polling path sends /actions.
+- Seven source-specific cases each advance a deterministic clock through four 4999+1 ms boundaries, asserting that only GET /info arrives during the disabled period, there is no jitter/backoff, and enabling the mock server restores CONNECTED without user input.
+- Twelve cases cover all four button kinds in DISABLED, STOPPED and OFFLINE: the press cancels a pending retry delay, immediately attempts a connection, shows CONNECT, and is consumed. Successful connection never replays that action; a separate subsequent press sends exactly one operation. Repeated presses during an in-flight connection share the attempt.
+- UNAUTHORIZED, close 4001 and CONFIGURE are checked against all four button kinds: no automatic or press-triggered requests. A valid token must be supplied through settings. Explicit stop cancels disabled polling.
+- The actual bundled SDK child process receives a real unhandled rejection through a test-only Node preload/IPC channel. It stops the client but retains visible button registrations. A later real SDK keyDown reconnects, shows CONNECT and sends no action; a subsequent keyDown performs one action. The production plugin contains no rejection-injection hook.
 
 Successful commands:
 

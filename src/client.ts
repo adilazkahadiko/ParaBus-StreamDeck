@@ -21,6 +21,8 @@ export class ParaBusClient {
   private config: GlobalSettings = { port: 4175, token: '' };
   private generation = 0;
   private stopped = true;
+  private connecting = false;
+  private disabledPolling = false;
   private ws?: WebSocket;
   private requests = new Set<ClientRequest>();
   private timer?: ReturnType<typeof setTimeout>;
@@ -38,8 +40,19 @@ export class ParaBusClient {
     if (!this.config.token) { this.status = 'CONFIGURE'; this.changed(); return; }
     this.stopped = false; void this.connect(this.generation);
   }
+  /** An offline press is consumed by connection setup, never retained as an action. */
+  connectOnPress(): void {
+    if (this.status === 'UNAUTHORIZED' || this.status === 'CONFIGURE' || !this.config.token) return;
+    if (this.status === 'CONNECTED' && this.state) return;
+    if (this.connecting) {
+      // Join the current probe rather than opening parallel connections on repeated presses.
+      this.status = 'CONNECTING'; this.changed(); return;
+    }
+    this.configure(this.config);
+  }
   stop(): void {
-    this.stopped = true; this.generation++; this.state = undefined; this.operations.clear();
+    this.stopped = true; this.connecting = false; this.disabledPolling = false;
+    this.generation++; this.state = undefined; this.operations.clear();
     this.connectedAt = undefined; this.reconnectDelay = undefined;
     if (this.timer) this.clock.clearTimeout(this.timer); this.timer = undefined;
     if (this.watchdog) clearTimeout(this.watchdog); this.watchdog = undefined;
@@ -84,7 +97,9 @@ export class ParaBusClient {
   }
   private async connect(g: number): Promise<void> {
     if (!this.live(g)) return;
-    this.status = 'CONNECTING'; this.reconnectDelay = undefined; this.changed();
+    this.connecting = true;
+    if (!this.disabledPolling) this.status = 'CONNECTING';
+    this.reconnectDelay = undefined; this.changed();
     try {
       const info = await this.http('/info'); if (!this.live(g)) return;
       const data = record(info.data);
@@ -113,14 +128,14 @@ export class ParaBusClient {
           const msg = record(JSON.parse(raw.toString()));
           if (msg.type === 'error') {
             const code = safeCode(record(msg.payload).code);
-            if (code === 'UNAUTHORIZED' || code === 'DISABLED') this.halt(code);
-            else this.reconnect(g, new ApiError(code));
+            this.reconnect(g, new ApiError(code));
           } else if (msg.type === 'state') {
             const next = parseState(msg.payload);
-            if (!next.enabled) { this.halt('DISABLED'); return; }
+            if (!next.enabled) { this.reconnect(g, new ApiError('DISABLED')); return; }
             if (next.instanceId !== this.state?.instanceId) { this.reconnect(g, new ApiError('STALE_REVISION')); return; }
             if (next.revision < this.state.revision) return;
             this.state = next; this.status = 'CONNECTED';
+            this.connecting = false; this.disabledPolling = false;
             watch(45000);
             this.connectedAt ??= this.clock.now(); this.changed();
           }
@@ -141,21 +156,24 @@ export class ParaBusClient {
       ws.on('error', () => { /* close handles retry; never log the request/error object */ });
       ws.on('close', code => {
         if (!this.live(g) || ws !== this.ws) return;
-        // A close code alone cannot establish the operation result or stop reason.
-        if (code === 4001 || code === 4003) this.halt('STOPPED');
+        // Close codes select connection policy, never establish a past operation's result.
+        if (code === 4001) this.halt('UNAUTHORIZED');
+        else if (code === 4003) this.reconnect(g, new ApiError('DISABLED'));
         else this.reconnect(g, new ApiError('OFFLINE'));
       });
     } catch (e) { if (this.live(g)) this.reconnect(g, e instanceof ApiError ? e : new ApiError('UNAVAILABLE')); }
   }
   private reconnect(g: number, error: ApiError): void {
     if (!this.live(g)) return;
-    if (['UNAUTHORIZED', 'DISABLED', 'INCOMPATIBLE'].includes(error.code)) { this.halt(error.code); return; }
+    if (['UNAUTHORIZED', 'INCOMPATIBLE'].includes(error.code)) { this.halt(error.code); return; }
+    if (error.code === 'DISABLED') this.disabledPolling = true;
     if (this.connectedAt !== undefined && this.clock.now() - this.connectedAt >= 30000) this.attempt = 0;
-    this.connectedAt = undefined; this.state = undefined; this.status = error.code;
+    this.connecting = false; this.connectedAt = undefined; this.state = undefined;
+    this.status = this.disabledPolling ? 'DISABLED' : error.code;
     const ws = this.ws; this.ws = undefined; ws?.terminate();
     if (this.watchdog) clearTimeout(this.watchdog); this.watchdog = undefined;
     if (this.timer) this.clock.clearTimeout(this.timer);
-    this.reconnectDelay = Math.max(backoff(this.attempt++, this.clock.random()), error.retryAfterMs);
+    this.reconnectDelay = this.disabledPolling ? 5000 : Math.max(backoff(this.attempt++, this.clock.random()), error.retryAfterMs);
     this.changed();
     this.timer = this.clock.setTimeout(() => { this.timer = undefined; void this.connect(g); }, this.reconnectDelay);
   }
@@ -172,7 +190,8 @@ export class ParaBusClient {
     } catch (e) {
       const error = e instanceof ApiError ? e : new ApiError('UNAVAILABLE');
       if (this.live(g)) {
-        if (['UNAUTHORIZED', 'DISABLED'].includes(error.code)) this.halt(error.code);
+        if (error.code === 'UNAUTHORIZED') this.halt(error.code);
+        else if (error.code === 'DISABLED') this.reconnect(g, error);
         else if (['OFFLINE', 'UNAVAILABLE'].includes(error.code)) this.reconnect(g, error);
         else if (error.code === 'STALE_REVISION' && error.currentMute === undefined) this.reconnect(g, error);
       }

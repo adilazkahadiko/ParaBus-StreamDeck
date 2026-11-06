@@ -24,6 +24,8 @@ export class MockParaBus {
   actions = [];
   wsServer = new WebSocketServer({ noServer: true });
   failure;
+  pathFailures = {};
+  beforeInfo;
   actionFailure;
   upgradeFailure;
   dropAction = false;
@@ -54,7 +56,9 @@ export class MockParaBus {
   success(data, requestId) { return { ok: true, ...(requestId ? { requestId } : {}), instanceId: this.state.instanceId, revision: this.state.revision, data }; }
   async http(req, res) {
     if (!this.capture(req)) { this.json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: 'Mock auth' }); return; }
-    if (this.failure) { this.json(res, this.failure.status, { ok: false, code: this.failure.code, message: 'Mock failure' }); return; }
+    if (req.url === '/external/v1/info') await this.beforeInfo?.();
+    const failure = this.failure ?? this.pathFailures[req.url];
+    if (failure) { this.json(res, failure.status, { ok: false, code: failure.code, message: 'Mock failure' }); return; }
     if (req.url === '/external/v1/info') {
       this.json(res, 200, this.success({ apiVersion: '1.0', paraBusVersion: '0.1.0', features: ['state.ws', 'fader.relative', 'participants.slot', 'participants.user'],
         operations: operations.map(name => ({ name, tiers: ['A'] })), limits: {}, instanceId: this.state.instanceId })); return;

@@ -9,9 +9,18 @@ class FakeClock {
   time = 0; jobs = new Map(); counter = 0;
   now = () => this.time;
   random = () => 0;
-  setTimeout = (fn, ms) => { const id = ++this.counter; this.jobs.set(id, { fn, ms }); return id; };
+  setTimeout = (fn, ms) => { const id = ++this.counter; this.jobs.set(id, { fn, ms, at: this.time + ms }); return id; };
   clearTimeout = id => this.jobs.delete(id);
   tick() { const [id, job] = this.jobs.entries().next().value; this.jobs.delete(id); this.time += job.ms; job.fn(); return job.ms; }
+  advance(ms) {
+    const end = this.time + ms;
+    for (;;) {
+      const next = [...this.jobs.entries()].filter(([, job]) => job.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!next) break;
+      const [id, job] = next; this.jobs.delete(id); this.time = job.at; job.fn();
+    }
+    this.time = end;
+  }
 }
 async function setup(t, ready = true) {
   const server = await new MockParaBus().start(), clock = new FakeClock(), client = new ParaBusClient(clock), buttons = new Buttons(client);
@@ -77,19 +86,24 @@ for (const code of ['RATE_LIMITED', 'INVALID', 'UNAUTHORIZED', 'DISABLED']) {
     buttons.attach('key', 'fader-up', { target: 'bus', busId }, sink); await buttons.press('key');
     const expected = { RATE_LIMITED: 'RATE\nLIMIT', INVALID: 'INVALID', UNAUTHORIZED: '401\nAUTH', DISABLED: 'DISABLED' }[code];
     await until(() => titles.includes(expected)); assert.ok(!JSON.stringify(titles).includes(server.token)); assert.equal(server.actions.length, 1);
-    if (code === 'UNAUTHORIZED' || code === 'DISABLED') { assert.equal(client.status, code); assert.equal(clock.jobs.size, 0); }
+    if (code === 'UNAUTHORIZED' || code === 'DISABLED') {
+      assert.equal(client.status, code); assert.equal(clock.jobs.size, code === 'DISABLED' ? 1 : 0);
+      if (code === 'DISABLED') assert.equal(client.reconnectDelay, 5000);
+    }
     if (code === 'RATE_LIMITED') { await buttons.press('key'); assert.equal(server.actions.length, 1); }
   });
 }
 for (const code of ['UNAUTHORIZED', 'DISABLED']) {
-  for (const where of ['HTTP', 'WS upgrade', 'WS message']) test(`${where} ${code}: latch until explicit connect`, async t => {
+  for (const where of ['HTTP', 'WS upgrade', 'WS message']) test(`${where} ${code}: ${code === 'DISABLED' ? 'poll until enabled' : 'latch until explicit connect'}`, async t => {
     const env = await setup(t, where === 'WS message'), { server, client, clock, config } = env;
     const failure = { status: code === 'UNAUTHORIZED' ? 401 : 503, code };
     if (where === 'HTTP') { server.failure = failure; client.configure(config); }
     if (where === 'WS upgrade') { server.upgradeFailure = failure; client.configure(config); }
     if (where === 'WS message') for (const ws of server.wsServer.clients) ws.send(JSON.stringify({ type: 'error', payload: { ok: false, code, message: server.token } }));
-    await until(() => client.status === code); assert.equal(clock.jobs.size, 0); assert.equal(client.state, undefined);
-    server.failure = server.upgradeFailure = undefined; client.configure(config); await until(() => client.status === 'CONNECTED');
+    await until(() => client.status === code); assert.equal(clock.jobs.size, code === 'DISABLED' ? 1 : 0); assert.equal(client.state, undefined);
+    server.failure = server.upgradeFailure = undefined;
+    if (code === 'DISABLED') { assert.equal(clock.tick(), 5000); } else client.configure(config);
+    await until(() => client.status === 'CONNECTED');
   });
 }
 test('backoff uses 1–30 seconds, jitter, exponential growth, cap', () => {
@@ -131,9 +145,10 @@ test('disconnect, stop, and ambiguous HTTP action failure never change audio aut
   server.dropAction = false; clock.tick(); await until(() => client.status === 'CONNECTED');
   assert.equal(server.actions.length, 1); client.stop(); assert.equal(clock.jobs.size, 0); assert.equal(server.actions.length, 1);
 });
-for (const code of [4001, 4003]) test(`close ${code} without reason: conservative STOPPED, no inferred result`, async t => {
+for (const code of [4001, 4003]) test(`close ${code} without reason: ${code === 4001 ? 'authentication stop' : 'disabled polling'}, no inferred result`, async t => {
   const { server, client, clock } = await setup(t); server.disconnect(code);
-  await until(() => client.status === 'STOPPED'); assert.equal(clock.jobs.size, 0); assert.equal(server.actions.length, 0);
+  await until(() => client.status === (code === 4001 ? 'UNAUTHORIZED' : 'DISABLED'));
+  assert.equal(clock.jobs.size, code === 4001 ? 0 : 1); assert.equal(server.actions.length, 0);
 });
 test('slot follows server order/revision; missing user/send never queues operations', async t => {
   const { server, buttons, client, sink } = await setup(t);
@@ -228,4 +243,109 @@ test('WS upgrade without mandatory initial state times out and reconnects withou
   const { server, client, clock, config } = await setup(t, false); server.suppressInitialState = true; client.configure(config);
   await until(() => clock.jobs.size === 1, 'initial state timeout', 6500);
   assert.equal(client.status, 'OFFLINE'); assert.equal(client.state, undefined); assert.equal(server.actions.length, 0);
+});
+
+for (const source of ['/info', '/state', 'WS upgrade', 'WS error', 'close 4003', 'HTTP enabled=false', 'WS enabled=false']) {
+  test(`DISABLED from ${source}: fixed 5s info-only probes, stable display, automatic recovery`, async t => {
+    const ready = ['WS error', 'close 4003', 'WS enabled=false'].includes(source);
+    const { server, client, clock, config, buttons, sink, titles } = await setup(t, ready);
+    buttons.attach('key', 'emergency', {}, sink);
+    const disabled = { status: 503, code: 'DISABLED' };
+    if (source === '/info') server.failure = disabled;
+    if (source === '/state') server.pathFailures['/external/v1/state'] = disabled;
+    if (source === 'WS upgrade') server.upgradeFailure = disabled;
+    if (source === 'HTTP enabled=false' || source === 'WS enabled=false') server.state.enabled = false;
+    if (!ready) client.configure(config);
+    else if (source === 'WS error') for (const ws of server.wsServer.clients) ws.send(JSON.stringify({ type: 'error', payload: { ok: false, code: 'DISABLED' } }));
+    else if (source === 'close 4003') server.disconnect(4003);
+    else server.broadcast();
+    await until(() => client.status === 'DISABLED' && clock.jobs.size === 1);
+    await until(() => titles.at(-1) === 'DISABLED');
+    const baseline = server.requests.length;
+    const statuses = []; client.onChange(() => statuses.push(client.status));
+    server.failure = disabled; clock.random = () => 1;
+    for (let probe = 1; probe <= 4; probe++) {
+      assert.equal(client.reconnectDelay, 5000);
+      clock.advance(4999); assert.equal(server.requests.length, baseline + probe - 1);
+      clock.advance(1); await until(() => server.requests.length === baseline + probe && clock.jobs.size === 1);
+      assert.equal(client.status, 'DISABLED');
+    }
+    assert.ok(statuses.every(status => status === 'DISABLED'));
+    assert.deepEqual(server.requests.slice(baseline).map(r => [r.method, r.path]), Array.from({ length: 4 }, () => ['GET', '/external/v1/info']));
+    assert.equal(server.actions.length, 0);
+    server.failure = server.upgradeFailure = undefined; server.pathFailures = {}; server.state.enabled = true;
+    clock.advance(5000); await until(() => client.status === 'CONNECTED');
+    assert.deepEqual(server.requests.slice(baseline + 4).map(r => r.path), ['/external/v1/info', '/external/v1/state', '/external/v1/ws']);
+    assert.equal(server.actions.length, 0); assert.equal(clock.jobs.size, 0);
+  });
+}
+
+for (const state of ['DISABLED', 'STOPPED', 'OFFLINE']) for (const kind of ['mute', 'fader-up', 'fader-down', 'emergency']) {
+  test(`${kind} press while ${state}: connect immediately, consume press, never replay action`, async t => {
+    const { server, client, clock, buttons, sink, titles, config } = await setup(t);
+    buttons.attach('key', kind, { target: 'bus', busId }, sink);
+    if (state === 'STOPPED') client.stop();
+    else if (state === 'OFFLINE') { server.disconnect(); await until(() => client.status === 'OFFLINE'); }
+    else {
+      for (const ws of server.wsServer.clients) ws.send(JSON.stringify({ type: 'error', payload: { ok: false, code: 'DISABLED' } }));
+      await until(() => client.status === 'DISABLED');
+    }
+    let release; server.beforeInfo = () => new Promise(resolve => { release = resolve; });
+    const baseline = server.requests.length;
+    await buttons.press('key'); assert.equal(client.status, 'CONNECTING');
+    await until(() => server.requests.length === baseline + 1 && titles.at(-1) === 'CONNECT');
+    assert.equal(clock.jobs.size, 0); assert.equal(server.requests.at(-1).path, '/external/v1/info'); assert.equal(server.actions.length, 0);
+    release(); server.beforeInfo = undefined;
+    await until(() => client.status === 'CONNECTED');
+    assert.equal(server.actions.length, 0);
+    assert.deepEqual(server.requests.slice(baseline).map(r => r.path), ['/external/v1/info', '/external/v1/state', '/external/v1/ws']);
+    clock.advance(30000); assert.equal(server.actions.length, 0); assert.equal(clock.jobs.size, 0);
+    // A separate press, after the connection is established, remains an ordinary action.
+    await buttons.press('key'); assert.equal(server.actions.length, 1);
+  });
+}
+
+for (const source of ['UNAUTHORIZED', 'close 4001', 'CONFIGURE']) {
+  test(`${source}: no automatic retry or connection on any button press`, async t => {
+    const { server, client, clock, buttons, sink, config } = await setup(t);
+    if (source === 'UNAUTHORIZED') {
+      server.failure = { status: 401, code: 'UNAUTHORIZED' }; client.configure(config); await until(() => client.status === 'UNAUTHORIZED');
+    } else if (source === 'close 4001') {
+      server.disconnect(4001); await until(() => client.status === 'UNAUTHORIZED');
+    } else client.configure({ port: server.port, token: '' });
+    const baseline = server.requests.length;
+    for (const kind of ['mute', 'fader-up', 'fader-down', 'emergency']) {
+      buttons.attach(kind, kind, { target: 'bus', busId }, sink); await buttons.press(kind);
+    }
+    clock.advance(60000); assert.equal(server.requests.length, baseline); assert.equal(clock.jobs.size, 0); assert.equal(server.actions.length, 0);
+  });
+}
+
+test('DISABLED display persists during a pending probe and temporary connection failures', async t => {
+  const { server, client, clock, config } = await setup(t, false);
+  server.failure = { status: 503, code: 'DISABLED' }; client.configure(config);
+  await until(() => client.status === 'DISABLED');
+  let release; server.beforeInfo = () => new Promise(resolve => { release = resolve; });
+  clock.advance(5000); await until(() => release); assert.equal(client.status, 'DISABLED');
+  server.failure = { status: 503, code: 'UNAVAILABLE' }; release(); server.beforeInfo = undefined;
+  await until(() => clock.jobs.size === 1);
+  assert.equal(client.status, 'DISABLED'); assert.equal(client.reconnectDelay, 5000); assert.equal(server.actions.length, 0);
+});
+
+test('presses during an existing connection attempt join it without parallel info probes or actions', async t => {
+  const { server, client, buttons, clock, sink, config } = await setup(t, false);
+  let release; server.beforeInfo = () => new Promise(resolve => { release = resolve; });
+  client.configure(config); await until(() => release);
+  const baseline = server.requests.length;
+  for (const kind of ['mute', 'emergency']) { buttons.attach(kind, kind, { target: 'bus', busId }, sink); await buttons.press(kind); }
+  assert.equal(server.requests.length, baseline); assert.equal(client.status, 'CONNECTING');
+  release(); server.beforeInfo = undefined; await until(() => client.status === 'CONNECTED');
+  assert.equal(server.actions.length, 0); assert.equal(clock.jobs.size, 0);
+});
+
+test('explicit stop cancels disabled polling without any new request', async t => {
+  const { server, client, clock, config } = await setup(t, false);
+  server.failure = { status: 503, code: 'DISABLED' }; client.configure(config); await until(() => client.status === 'DISABLED');
+  const baseline = server.requests.length; client.stop(); clock.advance(60000);
+  assert.equal(clock.jobs.size, 0); assert.equal(server.requests.length, baseline); assert.equal(server.actions.length, 0);
 });

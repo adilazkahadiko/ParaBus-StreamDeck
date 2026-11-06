@@ -28,7 +28,9 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
   });
   const info = { application: { version: '7.1.0', platform: 'windows', platformVersion: '10', language: 'en' }, plugin: { uuid: root, version: '0.1.0.0' },
     devices: [{ id: 'mock-mk2', name: 'Mock MK.2', type: 0, size: { columns: 5, rows: 3 } }], devicePixelRatio: 1, colors: {} };
-  child = spawn(process.execPath, ['bin/plugin.js', '-port', String(sdk.address().port), '-pluginUUID', root, '-registerEvent', 'registerPlugin', '-info', JSON.stringify(info)], { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  // Test-only preload injects a real unhandled rejection; production has no test hook.
+  const preload = "process.on('message', value => { if (value === 'test-rejection') void Promise.reject(new Error('Synthetic test rejection')); });";
+  child = spawn(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(preload)}`, 'bin/plugin.js', '-port', String(sdk.address().port), '-pluginUUID', root, '-registerEvent', 'registerPlugin', '-info', JSON.stringify(info)], { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   child.on('exit', () => { exited = true; }); child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { output += chunk; });
   await until(() => received.some(m => m.event === 'registerPlugin'), 'SDK registration');
   await until(() => server.wsServer.clients.size === 1, 'ParaBus WS');
@@ -45,6 +47,15 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
     await until(() => received.some(m => m.event === 'setTitle' && m.context === kind));
   }
   assert.deepEqual(server.actions.map(a => a.operation), ['bus.mute.toggle', 'bus.fader.adjust', 'bus.fader.adjust', 'emergency.set']);
+  child.send('test-rejection');
+  await until(() => received.some(m => m.event === 'setTitle' && m.context === 'fader-up' && m.payload.title === 'STOPPED'), 'rejection stops connection');
+  const beforeReconnect = received.length, requestsBeforeReconnect = server.requests.length;
+  await new Promise(resolve => setTimeout(resolve, 30)); assert.equal(server.requests.length, requestsBeforeReconnect);
+  send('keyDown', 'fader-up', { controller: 'Keypad', settings: {} });
+  await until(() => received.slice(beforeReconnect).some(m => m.event === 'setTitle' && m.context === 'fader-up' && m.payload.title === 'CONNECT'), 'press reconnects after rejection');
+  await until(() => received.slice(beforeReconnect).some(m => m.event === 'sendToPropertyInspector' && m.payload.status === 'CONNECTED'), 'recovered from rejection');
+  assert.equal(server.actions.length, 4, 'reconnecting press is never replayed');
+  send('keyDown', 'fader-up', { controller: 'Keypad', settings: {} }); await until(() => server.actions.length === 5);
   send('sendToPlugin', 'mute', { type: 'connection.save', port: server.port, token: server.token });
   await until(() => received.filter(m => m.event === 'sendToPropertyInspector').length >= 3);
   // Exercise SDK error logging too: raw inbound payloads must never reach a log.

@@ -59,6 +59,7 @@ streamDeck.settings.onDidReceiveGlobalSettings(ev => client.configure(ev.setting
 function stop(): void { client.stop(); buttons.dispose(); }
 process.on('SIGINT', () => { stop(); process.exit(0); });
 process.on('SIGTERM', () => { stop(); process.exit(0); });
-process.on('unhandledRejection', () => { stop(); });
+// Retain visible buttons so a later press can reconnect without replaying any action.
+process.on('unhandledRejection', () => { client.stop(); });
 await streamDeck.connect();
 client.configure(await streamDeck.settings.getGlobalSettings());

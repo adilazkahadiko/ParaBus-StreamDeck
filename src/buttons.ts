@@ -87,6 +87,11 @@ export class Buttons {
   }
   async press(id: string): Promise<void> {
     const b = this.buttons.get(id); if (!b) return;
+    if (this.client.status !== 'CONNECTED' || !this.client.state) {
+      b.error = undefined;
+      if (b.timer) clearTimeout(b.timer); b.timer = undefined;
+      this.client.connectOnPress(); this.render(b); return;
+    }
     if (b.pending) { this.fail(b, 'BUSY'); return; }
     if (Date.now() < this.blockedUntil && b.kind !== 'emergency') { this.fail(b, 'RATE_LIMITED'); return; }
     b.pending = true; b.error = undefined;

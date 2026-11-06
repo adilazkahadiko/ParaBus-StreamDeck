@@ -1,0 +1,97 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "io.github.adilazkahadiko.parabus",
+  "Name": "ParaBus",
+  "Author": "adilazkahadiko",
+  "Description": "Local buttons for ParaBus external control API v1.",
+  "Version": "0.1.0.0",
+  "SDKVersion": 2,
+  "CodePath": "bin/plugin.js",
+  "Icon": "imgs/plugin",
+  "Category": "ParaBus",
+  "CategoryIcon": "imgs/category",
+  "Nodejs": {
+    "Version": "24"
+  },
+  "Software": {
+    "MinimumVersion": "7.1"
+  },
+  "OS": [
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "PropertyInspectorPath": "ui/inspector.html",
+  "Actions": [
+    {
+      "UUID": "io.github.adilazkahadiko.parabus.mute",
+      "Name": "Toggle Mute",
+      "Icon": "imgs/muted",
+      "Controllers": [
+        "Keypad"
+      ],
+      "DisableAutomaticStates": true,
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "imgs/muted",
+          "TitleAlignment": "bottom",
+          "FontSize": 12
+        }
+      ]
+    },
+    {
+      "UUID": "io.github.adilazkahadiko.parabus.fader-up",
+      "Name": "Fader Up",
+      "Icon": "imgs/fader-up",
+      "Controllers": [
+        "Keypad"
+      ],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "imgs/fader-up",
+          "TitleAlignment": "bottom",
+          "FontSize": 12
+        }
+      ]
+    },
+    {
+      "UUID": "io.github.adilazkahadiko.parabus.fader-down",
+      "Name": "Fader Down",
+      "Icon": "imgs/fader-down",
+      "Controllers": [
+        "Keypad"
+      ],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "imgs/fader-down",
+          "TitleAlignment": "bottom",
+          "FontSize": 12
+        }
+      ]
+    },
+    {
+      "UUID": "io.github.adilazkahadiko.parabus.emergency",
+      "Name": "Emergency Mute ON",
+      "Icon": "imgs/emergency",
+      "Controllers": [
+        "Keypad"
+      ],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "imgs/emergency",
+          "TitleAlignment": "bottom",
+          "FontSize": 11
+        }
+      ]
+    }
+  ]
+}

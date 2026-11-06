@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.tools/
+coverage/
+*.streamDeckPlugin
+*.sdPlugin/bin/
+*.sdPlugin/logs/
+*.sdPlugin/THIRD_PARTY_LICENSES.txt
+*.sdPlugin/LICENSE
+.env
+.env.*
+*.log

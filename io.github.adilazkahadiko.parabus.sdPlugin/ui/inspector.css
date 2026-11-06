@@ -1,0 +1,11 @@
+:root { color-scheme: dark; font: 12px system-ui, sans-serif; background: #25272b; color: #eee; }
+body { margin: 12px; }
+h1 { font-size: 18px; margin: 0 0 8px; }
+fieldset { border: 1px solid #535862; border-radius: 5px; margin: 14px 0; padding: 12px; }
+legend { color: #9bd6d0; }
+label { display: block; margin-bottom: 12px; }
+input, select { display: block; box-sizing: border-box; width: 100%; margin-top: 5px; padding: 6px; }
+button { margin: 3px 4px 3px 0; padding: 7px; border: 1px solid #666; border-radius: 4px; cursor: pointer; }
+p { line-height: 1.6; overflow-wrap: anywhere; color: #bbb; }
+#status { color: #9bd6d0; }
+[hidden] { display: none !important; }

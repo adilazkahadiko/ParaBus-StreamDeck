@@ -24,7 +24,7 @@ export function resolveTarget(s: ButtonSettings, state: State): Resolved {
     if (b.state === 'NO_BOT') throw new ApiError('UNAVAILABLE');
     return { prefix: 'tx', args: { profileId: b.profileId }, db: b.masterDb };
   }
-  if (s.target !== 'channel' && s.target !== 'send') throw new ApiError('CONFIGURE');
+  if (s.target !== 'send') throw new ApiError('CONFIGURE');
   let target: ParticipantTarget, userId: string | undefined;
   if (s.participant === 'slot') {
     if (!s.index) throw new ApiError('CONFIGURE');
@@ -37,13 +37,13 @@ export function resolveTarget(s: ButtonSettings, state: State): Resolved {
   }
   const p = state.participants.find(p => p.discordUserId === userId);
   if (!p) throw new ApiError('NOT_FOUND');
-  if (s.target === 'channel') return { prefix: 'channel', args: { target }, db: p.faderDb, mute: p.mute, setMute: v => { p.mute = v; } };
   const send = p.sends.find(send => send.busId === s.busId);
   if (!s.busId) throw new ApiError('CONFIGURE');
   if (!send || !state.buses.some(b => b.busId === s.busId && b.kind === 'vc')) throw new ApiError('NOT_FOUND');
   return { prefix: 'send', args: { target, busId: s.busId }, db: send.db, mute: send.mute, setMute: v => { send.mute = v; } };
 }
 export function view(kind: ButtonKind, settings: ButtonSettings, client: ParaBusClient, error?: Code): View {
+  if (kind !== 'emergency' && !settings.target) return { title: errors.CONFIGURE, image: 'imgs/offline.svg' };
   if (error) return { title: errors[error], image: 'imgs/error.svg' };
   if (client.status !== 'CONNECTED' || !client.state) return { title: errors[client.status === 'CONNECTED' ? 'OFFLINE' : client.status], image: 'imgs/offline.svg' };
   if (kind === 'emergency') return { title: client.state.emergencyMuted ? 'EMERGENCY\nON' : 'EMERGENCY\nREADY', image: client.state.emergencyMuted ? 'imgs/emergency-on.svg' : 'imgs/emergency.svg' };
@@ -87,6 +87,11 @@ export class Buttons {
   }
   async press(id: string): Promise<void> {
     const b = this.buttons.get(id); if (!b) return;
+    if (b.kind !== 'emergency' && !b.settings.target) {
+      b.error = undefined;
+      if (b.timer) clearTimeout(b.timer); b.timer = undefined;
+      this.render(b); return;
+    }
     if (this.client.status !== 'CONNECTED' || !this.client.state) {
       b.error = undefined;
       if (b.timer) clearTimeout(b.timer); b.timer = undefined;

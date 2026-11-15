@@ -1,5 +1,5 @@
 export type ButtonSettings = {
-  target?: 'channel' | 'bus' | 'send' | 'tx';
+  target?: 'bus' | 'send' | 'tx';
   participant?: 'user' | 'slot';
   discordUserId?: string;
   index?: number;
@@ -16,8 +16,8 @@ const id = (v: unknown): v is string => typeof v === 'string' && v.length > 0 &&
 /** An allowlist, never a spread of incoming settings. No names, tokens or revisions. */
 export function buttonSettings(value: unknown): ButtonSettings {
   const v = record(value), s: ButtonSettings = {};
-  if (['channel', 'bus', 'send', 'tx'].includes(String(v.target))) s.target = v.target as ButtonSettings['target'];
-  if (s.target === 'channel' || s.target === 'send') {
+  if (['bus', 'send', 'tx'].includes(String(v.target))) s.target = v.target as ButtonSettings['target'];
+  if (s.target === 'send') {
     if (v.participant === 'slot') {
       s.participant = 'slot';
       if (Number.isSafeInteger(v.index) && Number(v.index) >= 1 && Number(v.index) <= 112) s.index = Number(v.index);

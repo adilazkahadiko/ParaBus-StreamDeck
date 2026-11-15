@@ -6,7 +6,7 @@ export type ParticipantTarget = { kind: 'user'; discordUserId: string } | {
 };
 export type State = {
   instanceId: string; revision: number; participantsRevision: number; enabled: boolean; emergencyMuted: boolean;
-  participants: { discordUserId: string; faderDb: number; mute: boolean; sends: { busId: string; db: number; mute: boolean }[]; displayName?: string }[];
+  participants: { discordUserId: string; sends: { busId: string; db: number; mute: boolean }[]; displayName?: string }[];
   registeredUsers: { discordUserId: string; online: boolean; displayName?: string }[];
   participantOrders: { scope: Scope; users: string[] }[];
   buses: { busId: string; kind: string; masterDb: number; mute: boolean }[];
@@ -38,7 +38,7 @@ export function parseState(value: unknown): State {
     instanceId: v.instanceId, revision: v.revision, participantsRevision: v.participantsRevision,
     enabled: bool(v.enabled), emergencyMuted: bool(v.emergencyMuted), permissions: { readDisplayNames: names },
     participants: array(v.participants).map(x => { const p = record(x); return {
-      discordUserId: text(p.discordUserId), faderDb: db(p.faderDb), mute: bool(p.mute), ...name(p),
+      discordUserId: text(p.discordUserId), ...name(p),
       sends: array(p.sends).map(x => { const s = record(x); return { busId: text(s.busId), db: db(s.db), mute: bool(s.mute) }; })
     }; }),
     registeredUsers: array(v.registeredUsers).map(x => { const p = record(x); return { discordUserId: text(p.discordUserId), online: bool(p.online), ...name(p) }; }),

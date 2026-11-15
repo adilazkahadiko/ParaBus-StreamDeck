@@ -37,9 +37,21 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
   const send = (event, kind, payload) => socket.send(JSON.stringify({ event, action: `${root}.${kind}`, context: kind, device: 'mock-mk2', ...(payload ? { payload } : {}) }));
   for (const kind of ['mute', 'fader-up', 'fader-down', 'emergency']) {
     send('willAppear', kind, { controller: 'Keypad', coordinates: { column: 0, row: 0 }, isInMultiAction: false,
-      settings: kind === 'emergency' ? { token: server.token } : { target: 'bus', busId, stepDb: 2, token: server.token, displayName: 'must not persist' } });
+      settings: kind === 'emergency' ? { token: server.token } : { target: 'channel', discordUserId: '100000000000000001', stepDb: 2, token: server.token, displayName: 'must not persist' } });
   }
   await until(() => received.filter(m => m.event === 'setSettings').length === 4, 'sanitize settings');
+  for (const kind of ['mute', 'fader-up', 'fader-down']) {
+    await until(() => received.some(m => m.event === 'setTitle' && m.context === kind && m.payload.title === 'SETUP'));
+    assert.deepEqual(received.find(m => m.event === 'setSettings' && m.context === kind).payload, { stepDb: 2 });
+    send('keyDown', kind, { controller: 'Keypad', settings: {} });
+  }
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(server.actions.length, 0, 'legacy buttons never send actions');
+  for (const kind of ['mute', 'fader-up', 'fader-down']) {
+    const baseline = received.length;
+    send('didReceiveSettings', kind, { settings: { target: 'bus', busId, stepDb: 2 } });
+    await until(() => received.slice(baseline).some(m => m.event === 'setTitle' && m.context === kind && m.payload.title !== 'SETUP'));
+  }
   send('propertyInspectorDidAppear', 'mute'); send('sendToPlugin', 'mute', { type: 'hello' });
   await until(() => received.some(m => m.event === 'sendToPropertyInspector' && m.payload.tokenConfigured));
   for (const kind of ['mute', 'fader-up', 'fader-down', 'emergency']) {
@@ -56,6 +68,15 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
   await until(() => received.slice(beforeReconnect).some(m => m.event === 'sendToPropertyInspector' && m.payload.status === 'CONNECTED'), 'recovered from rejection');
   assert.equal(server.actions.length, 4, 'reconnecting press is never replayed');
   send('keyDown', 'fader-up', { controller: 'Keypad', settings: {} }); await until(() => server.actions.length === 5);
+  for (const kind of ['mute', 'fader-up', 'fader-down']) {
+    const baseline = received.length;
+    send('didReceiveSettings', kind, { settings: { target: 'channel', participant: 'slot', index: 1 } });
+    await until(() => received.slice(baseline).some(m => m.event === 'setTitle' && m.context === kind && m.payload.title === 'SETUP'));
+    assert.deepEqual(received.slice(baseline).find(m => m.event === 'setSettings' && m.context === kind).payload, {});
+    send('keyDown', kind, { controller: 'Keypad', settings: {} });
+  }
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(server.actions.length, 5, 'legacy settings received later never send actions');
   send('sendToPlugin', 'mute', { type: 'connection.save', port: server.port, token: server.token });
   await until(() => received.filter(m => m.event === 'sendToPropertyInspector').length >= 3);
   // Exercise SDK error logging too: raw inbound payloads must never reach a log.

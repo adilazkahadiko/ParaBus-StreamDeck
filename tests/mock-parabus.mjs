@@ -3,12 +3,12 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 export const userId = '100000000000000001';
 export const busId = 'external-bus:' + 'a'.repeat(43);
-export const operations = ['channel.mute.toggle', 'bus.mute.toggle', 'send.mute.toggle', 'channel.fader.adjust', 'bus.fader.adjust', 'send.fader.adjust', 'tx.fader.adjust', 'emergency.set'];
+export const operations = ['bus.mute.toggle', 'send.mute.toggle', 'bus.fader.adjust', 'send.fader.adjust', 'tx.fader.adjust', 'emergency.set'];
 export function fixture() {
   return {
     instanceId: randomUUID(), revision: 1, participantsRevision: 7, enabled: true,
     state: 'READY', settingsLocked: false, emergencyMuted: false, emergencyEpoch: 1, outputCount: 2,
-    participants: [{ discordUserId: userId, faderDb: -10, mute: false, sends: [{ busId, db: -4, mute: false }] }],
+    participants: [{ discordUserId: userId, sends: [{ busId, db: -4, mute: false }] }],
     registeredUsers: [{ discordUserId: userId, online: true }],
     participantOrders: [{ scope: { kind: 'all' }, users: [userId] }, { scope: { kind: 'bus', busId }, users: [userId] }],
     buses: [{ busId, kind: 'vc', masterDb: -3, mute: false, limiterEnabled: true, compressor: { enabled: false, thresholdDb: -12, ratio: 2, attackMs: 5, releaseMs: 100, makeupDb: 0 } }],
@@ -74,6 +74,7 @@ export class MockParaBus {
       this.json(res, f.status, { ok: false, code: f.code, message: f.message ?? 'Mock failure', ...(f.current ? { current: f.current } : {}) }, f.code === 'RATE_LIMITED' ? { 'Retry-After': '2' } : {}); return;
     }
     const { operation, args } = payload;
+    if (!operations.includes(operation)) { this.json(res, 400, { ok: false, code: 'INVALID', message: 'Mock unsupported operation' }); return; }
     if (payload.instanceId !== this.state.instanceId) { this.json(res, 409, { ok: false, code: 'STALE_REVISION', message: 'Mock stale instance' }); return; }
     const [family, type] = operation.split('.');
     let object, field;
@@ -81,12 +82,12 @@ export class MockParaBus {
     else {
       const user = args.target?.kind === 'slot' ? this.state.participantOrders.find(o => JSON.stringify(o.scope) === JSON.stringify(args.target.scope))?.users[args.target.index - 1] : args.target?.discordUserId;
       const p = this.state.participants.find(p => p.discordUserId === user);
-      object = family === 'channel' ? p : family === 'send' ? p?.sends.find(s => s.busId === args.busId) : family === 'bus' ? this.state.buses.find(b => b.busId === args.busId) : this.state.tx.bots.find(b => b.profileId === args.profileId);
+      object = family === 'send' ? p?.sends.find(s => s.busId === args.busId) : family === 'bus' ? this.state.buses.find(b => b.busId === args.busId) : this.state.tx.bots.find(b => b.profileId === args.profileId);
       if (!object) { this.json(res, 404, { ok: false, code: 'NOT_FOUND', message: 'Mock no target' }); return; }
       if (type === 'mute') {
         if (object.mute !== args.expectedMute) { this.json(res, 409, { ok: false, code: 'STALE_REVISION', message: 'Mock stale mute', current: { mute: object.mute } }); return; }
         object.mute = !object.mute;
-      } else { field = family === 'channel' ? 'faderDb' : family === 'send' ? 'db' : 'masterDb'; object[field] += args.deltaDb; }
+      } else { field = family === 'send' ? 'db' : 'masterDb'; object[field] += args.deltaDb; }
     }
     this.state.revision++;
     this.json(res, 200, this.success({}, payload.requestId)); this.broadcast();

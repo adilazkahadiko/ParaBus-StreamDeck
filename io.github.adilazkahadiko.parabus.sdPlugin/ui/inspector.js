@@ -15,7 +15,7 @@ function fill(id, options, emptyLabel) {
 }
 function updateFields() {
   const target = element('target').value, participant = element('participant').value;
-  element('participantFields').hidden = target !== 'channel' && target !== 'send';
+  element('participantFields').hidden = target !== 'send';
   element('userField').hidden = participant === 'slot';
   element('slotFields').hidden = participant !== 'slot';
   element('busField').hidden = target !== 'bus' && target !== 'send';
@@ -26,7 +26,7 @@ function updateFields() {
 }
 function applySettings(s) {
   for (const id of ['target', 'participant', 'discordUserId', 'index', 'stepDb']) {
-    element(id).value = s[id] ?? ({ target: 'channel', participant: 'user', discordUserId: '', index: 1, stepDb: 1 })[id];
+    element(id).value = s[id] ?? ({ target: '', participant: 'user', discordUserId: '', index: 1, stepDb: 1 })[id];
   }
   updateFields();
   for (const id of ['busId', 'scopeBusId', 'profileId']) {
@@ -69,7 +69,8 @@ element('connect').addEventListener('click', () => send({ type: 'connection.conn
 element('clear').addEventListener('click', () => { element('token').value = ''; send({ type: 'connection.clear' }); });
 element('saveButton').addEventListener('click', () => {
   const target = element('target').value, settings = { target };
-  if (target === 'channel' || target === 'send') {
+  if (!['bus', 'send', 'tx'].includes(target)) { element('status').textContent = 'Select target / 対象を選択'; return; }
+  if (target === 'send') {
     settings.participant = element('participant').value;
     if (settings.participant === 'slot') { settings.index = Number(element('index').value); if (element('scopeBusId').value) settings.scopeBusId = element('scopeBusId').value; }
     else {

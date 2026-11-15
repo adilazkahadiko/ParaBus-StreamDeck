@@ -31,12 +31,10 @@ async function setup(t, ready = true) {
   return { server, client, clock, buttons, sink, titles, images, config };
 }
 const selections = [
-  ['user', { target: 'channel', discordUserId: userId }, 'channel', { target: { kind: 'user', discordUserId: userId } }],
-  ['slot all', { target: 'channel', participant: 'slot', index: 1 }, 'channel', { target: { kind: 'slot', scope: { kind: 'all' }, index: 1, expectedParticipantsRevision: 7 } }],
-  ['slot bus', { target: 'channel', participant: 'slot', index: 1, scopeBusId: busId }, 'channel', { target: { kind: 'slot', scope: { kind: 'bus', busId }, index: 1, expectedParticipantsRevision: 7 } }],
   ['bus', { target: 'bus', busId }, 'bus', { busId }],
   ['send', { target: 'send', discordUserId: userId, busId }, 'send', { target: { kind: 'user', discordUserId: userId }, busId }],
-  ['send slot', { target: 'send', participant: 'slot', index: 1, busId }, 'send', { target: { kind: 'slot', scope: { kind: 'all' }, index: 1, expectedParticipantsRevision: 7 }, busId }]
+  ['send slot all', { target: 'send', participant: 'slot', index: 1, busId }, 'send', { target: { kind: 'slot', scope: { kind: 'all' }, index: 1, expectedParticipantsRevision: 7 }, busId }],
+  ['send slot bus', { target: 'send', participant: 'slot', index: 1, scopeBusId: busId, busId }, 'send', { target: { kind: 'slot', scope: { kind: 'bus', busId }, index: 1, expectedParticipantsRevision: 7 }, busId }]
 ];
 for (const [label, settings, prefix, args] of selections) {
   test(`mute ${label}: operation, args, latest expectedMute and new UUID per press`, async t => {
@@ -57,7 +55,7 @@ for (const [label, settings, prefix, args] of selections) {
     assert.equal(server.actions.length, 1); assert.equal(client.status, 'CONNECTED');
   });
 }
-const faders = [...selections.filter(([name]) => ['user', 'bus', 'send', 'slot all'].includes(name)), ['TX', { target: 'tx', profileId: 'TX01' }, 'tx', { profileId: 'TX01' }]];
+const faders = [...selections, ['TX', { target: 'tx', profileId: 'TX01' }, 'tx', { profileId: 'TX01' }]];
 for (const [label, settings, prefix, args] of faders) {
   for (const direction of ['up', 'down']) for (const step of [1, 2, 3, 6]) {
     test(`fader ${label} ${direction} ${step} dB: relative A and display`, async t => {
@@ -72,6 +70,40 @@ for (const [label, settings, prefix, args] of faders) {
     });
   }
 }
+for (const kind of ['mute', 'fader-up', 'fader-down']) for (const participant of ['user', 'slot']) {
+  test(`legacy channel ${kind} ${participant}: SETUP on attach/update/offline, no requests`, async t => {
+    const { server, client, buttons, sink, titles } = await setup(t);
+    const legacy = { target: 'channel', participant, discordUserId: userId, index: 1, scopeBusId: busId, busId, stepDb: 2 };
+    assert.deepEqual(buttonSettings(legacy), { stepDb: 2 });
+    assert.throws(() => resolveTarget(legacy, client.state), /CONFIGURE/);
+    buttons.attach('key', kind, legacy, sink);
+    await until(() => titles.at(-1) === 'SETUP');
+    const requestCount = server.requests.length;
+    await buttons.press('key');
+    assert.equal(server.requests.length, requestCount);
+    assert.equal(server.actions.length, 0);
+    buttons.update('key', { target: 'bus', busId });
+    await until(() => titles.at(-1) !== 'SETUP');
+    buttons.update('key', legacy);
+    await until(() => titles.at(-1) === 'SETUP');
+    await buttons.press('key');
+    client.stop();
+    assert.equal(view(kind, buttons.settings('key'), client).title, 'SETUP');
+    await buttons.press('key');
+    assert.equal(client.status, 'STOPPED');
+    assert.equal(server.requests.length, requestCount);
+    assert.equal(server.actions.length, 0);
+  });
+}
+test('state accepts participants without faderDb/mute and ignores legacy fields', () => {
+  const raw = fixture(), parsed = parseState(raw);
+  assert.deepEqual(parsed.participants, [{ discordUserId: userId, sends: [{ busId, db: -4, mute: false }] }]);
+  raw.participants[0].faderDb = 'unused'; raw.participants[0].mute = null;
+  assert.deepEqual(parseState(raw), parsed);
+  assert.equal(resolveTarget({ target: 'send', discordUserId: userId, busId }, parsed).db, -4);
+  delete raw.participants[0].sends[0].mute;
+  assert.throws(() => parseState(raw), /UNAVAILABLE/);
+});
 test('emergency always sends active:true, reflects WS state, never releases', async t => {
   const { server, buttons, sink, titles } = await setup(t);
   buttons.attach('key', 'emergency', { active: false, token: server.token }, sink);
@@ -154,7 +186,7 @@ test('slot follows server order/revision; missing user/send never queues operati
   const { server, buttons, client, sink } = await setup(t);
   server.state.participantsRevision++; server.state.revision++; server.broadcast();
   await until(() => client.state.participantsRevision === 8);
-  buttons.attach('key', 'fader-down', { target: 'channel', participant: 'slot', index: 1, stepDb: 1 }, sink); await buttons.press('key');
+  buttons.attach('key', 'fader-down', { target: 'send', participant: 'slot', index: 1, busId, stepDb: 1 }, sink); await buttons.press('key');
   assert.equal(server.actions[0].args.target.expectedParticipantsRevision, 8);
   server.state.participants = []; server.state.revision++; server.broadcast(); await until(() => client.state.participants.length === 0);
   await buttons.press('key'); assert.equal(server.actions.length, 1);
@@ -202,13 +234,13 @@ test('readDisplayNames is required and names are projected as text, never saved'
   assert.ok(!JSON.stringify(inspector.snapshot('key')).includes(unsafe));
   server.state.permissions.readDisplayNames = true; server.state.revision++; server.broadcast(); await until(() => client.state.permissions.readDisplayNames);
   assert.equal(inspector.snapshot('key').users[0].label, `${userId} · ${unsafe}`);
-  assert.deepEqual(buttonSettings({ target: 'channel', discordUserId: userId, displayName: unsafe }), { target: 'channel', participant: 'user', discordUserId: userId });
+  assert.deepEqual(buttonSettings({ target: 'send', discordUserId: userId, busId, displayName: unsafe }), { target: 'send', participant: 'user', discordUserId: userId, busId });
   const js = await readFile('io.github.adilazkahadiko.parabus.sdPlugin/ui/inspector.js', 'utf8');
   assert.ok(!js.includes('innerHTML')); assert.ok(!js.includes('getGlobalSettings')); assert.ok(!js.includes('fetch(')); assert.ok(js.includes('textContent = u.label'));
 });
 test('configuration fixes host and rejects invalid steps and numeric Discord IDs', () => {
   assert.deepEqual(globalSettings({ port: 0, host: 'example.com', token: 'bad\r\nheader' }), { port: 4175, token: '' });
-  assert.deepEqual(buttonSettings({ target: 'channel', discordUserId: Number(userId), stepDb: Infinity, token: 'synthetic' }), { target: 'channel', participant: 'user' });
+  assert.deepEqual(buttonSettings({ target: 'send', discordUserId: Number(userId), stepDb: Infinity, token: 'synthetic' }), { target: 'send', participant: 'user' });
   for (const stepDb of [-1, 0, 7, NaN]) assert.equal(buttonSettings({ stepDb }).stepDb, undefined);
 });
 test('NO_BOT TX is shown explicitly and never sent to backend', async t => {
@@ -230,8 +262,8 @@ test('changing a button during a pending toggle never applies STALE to its new t
   server.actionDelay = 30; server.actionFailure = { status: 409, code: 'STALE_REVISION', current: { mute: true } };
   buttons.attach('key', 'mute', { target: 'bus', busId }, sink);
   const pending = buttons.press('key'); await until(() => server.actions.length === 1);
-  buttons.update('key', { target: 'channel', discordUserId: userId }); await pending;
-  assert.equal(client.state.participants[0].mute, false); assert.equal(client.state.buses[0].mute, true);
+  buttons.update('key', { target: 'send', discordUserId: userId, busId }); await pending;
+  assert.equal(client.state.participants[0].sends[0].mute, false); assert.equal(client.state.buses[0].mute, true);
 });
 test('a second press during pending HTTP is rejected, never queued', async t => {
   const { server, buttons, sink, titles } = await setup(t);

@@ -22,7 +22,8 @@
   </fieldset>
   <fieldset id="buttonSettings">
     <legend>This button / このボタン</legend>
-    <label>Target / 対象 <select id="target"><option value="channel">Participant / 参加者</option><option value="bus">Bus</option><option value="send">Send</option><option value="tx">TX</option></select></label>
+    <label>Target / 対象 <select id="target"><option value="">Select target / 対象を選択</option><option value="bus">Bus</option><option value="send">Participant MIX (Send) / 参加者の MIX（Send）</option><option value="tx">TX</option></select></label>
+    <p>Participant MIX (Send): participant → VC MIX on/off and level.<br>参加者の MIX（Send）: 参加者 → VC MIX の On/Off とレベルを操作します。</p>
     <div id="participantFields">
       <label>Participant / 参加者指定 <select id="participant"><option value="user">Discord user ID / 固定ユーザー</option><option value="slot">Slot / 並び順</option></select></label>
       <label id="userField">Discord user ID <input id="discordUserId" type="text" inputmode="numeric" maxlength="20" list="users"><datalist id="users"></datalist></label>

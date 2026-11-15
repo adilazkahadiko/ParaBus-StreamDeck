@@ -1,10 +1,10 @@
 # Stage 3 verification
 
-Automated mock verification was performed locally on Windows, 2026-11-07 (JST). The completed profile-export inspection is recorded below.
+Automated mock verification was first performed locally on Windows, 2026-11-07 (JST), and rerun for the API update on 2026-11-16. The completed profile-export inspection is recorded below.
 
 ## Contract and scope
 
-Read-only source: `C:/Dev/ParaBus-public/docs/EXTERNAL_CONTROL_API.md`, main commit `bd9a793bfd4e27c6685c355ab219f0f8fd968bbe`. No source repository files were edited. The old private repository and run folders were not accessed. ParaBus itself was not launched; no bot or audio device was used.
+Original read-only source: `C:/Dev/ParaBus-public/docs/EXTERNAL_CONTROL_API.md`, main commit `bd9a793bfd4e27c6685c355ab219f0f8fd968bbe`. The 2026-11-16 update follows the maintainer-supplied API change being prepared in parallel: remove `channel.fader.*`, `channel.mute.*`, and participant-level `faderDb` / `mute`. ParaBus-public was only read; no source repository files were edited. The old private repository and run folders were not accessed. ParaBus itself was not launched; no bot or audio device was used.
 
 Plugin UUID: `io.github.adilazkahadiko.parabus`. Four Keypad actions: `.mute`, `.fader-up`, `.fader-down`, `.emergency`. No encoder handlers, Stage B operations, emergency release, absolute fader writes, or action retry queues are implemented. Every accepted press sends a fresh UUID. No automatic action retry is implemented, including on communication errors; therefore an ambiguous request is never resubmitted with a new ID.
 
@@ -49,10 +49,12 @@ For every request: Bearer present and correct; Host exactly `127.0.0.1:<configur
 
 ## Automated checks
 
-Final automated result: **109 passed / 0 skipped / 0 failed**, 0 cancelled. Tests run without the Stream Deck app. All original 84 cases are retained; the assertions for DISABLED / close 4001 / close 4003 follow the maintainer's updated connection policy described below.
+Final automated result (2026-11-16): **114 passed / 0 skipped / 0 failed**, 0 cancelled. Tests run without the Stream Deck app. Previous participant-control cases now exercise supported Send operations; the assertions for DISABLED / close 4001 / close 4003 follow the maintainer's updated connection policy described below.
 
-- 12 mute cases cover fixed users, all/bus slots, buses and sends: operation/args, latest expectedMute, distinct UUIDs, and STALE current.mute correction without resend.
-- 40 fader cases cover participant/user/slot, Bus, Send and TX, up/down with 1/2/3/6 dB, exact relative args and displayed resulting dB.
+- 8 mute cases cover Bus and Send (fixed user, all-participant slot, VC Bus slot): operation/args, latest expectedMute, distinct UUIDs, and STALE current.mute correction without resend.
+- 40 fader cases cover Bus, Send (fixed user, all-participant slot, VC Bus slot) and TX, up/down with 1/2/3/6 dB, exact relative args and displayed resulting dB.
+- Six legacy `target: channel` cases cover mute/up/down with user/slot settings: sanitized settings have no target, direct target resolution fails, attach/update show SETUP, and presses send no requests even after stopping the connection. The bundled SDK additionally verifies sanitization, SETUP and no actions through both willAppear and didReceiveSettings.
+- The default mock state omits participant-level faderDb/mute and advertises no channel operations; unsupported actions are rejected. State parsing also ignores malformed legacy fields while still requiring Send mute. The PI excludes the channel option, describes Participant MIX (Send) as participant → VC MIX on/off and level, and requires explicit target selection for sanitized legacy settings.
 - Emergency ON is checked on repeated presses, with state display and no release operation.
 - INVALID/RATE_LIMITED and HTTP, WS upgrade, WS message authentication/disabled failures are checked. 401 / close 4001 latch; DISABLED / close 4003 use fixed five-second probes. Rate limit honors Retry-After for new normal presses.
 - Backoff timing uses a deterministic clock: 1/2/4/8/16/30-second sequence, jitter bounds, retry growth, short-lived connection flapping and reset after 30 stable seconds. Instance changes refetch info/state. Old state revisions are ignored. Initial WS state timeout is covered.
@@ -74,6 +76,7 @@ Successful commands:
 
 ```powershell
 npm.cmd run typecheck
+npm.cmd test
 .tools/node24.exe scripts/build.mjs
 .tools/node24.exe scripts/build-tests.mjs
 .tools/node24.exe --test --test-reporter=spec tests/*.test.mjs

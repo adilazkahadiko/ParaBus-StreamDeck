@@ -32,13 +32,15 @@ Stream Deck の ParaBus カテゴリーからボタンを配置し、対象を�
 
 | ボタン | 対象と動作 |
 | --- | --- |
-| Toggle Mute | 参加者・Bus・Send のミュートを反転。現在の `mute` を `expectedMute` に使用し、`STALE_REVISION` の `current.mute` で表示を訂正。自動再送しません |
-| Fader Up / Down | 参加者・Bus・Send・TX に1回だけ `*.fader.adjust`。既定1 dB、0超〜6 dBでボタンごとに設定（1 / 2 / 3 / 6 dBなど）。現在の dB を表示 |
+| Toggle Mute | Bus・参加者の MIX（Send）のミュートを反転。現在の `mute` を `expectedMute` に使用し、`STALE_REVISION` の `current.mute` で表示を訂正。自動再送しません |
+| Fader Up / Down | Bus・参加者の MIX（Send）・TX に1回だけ `*.fader.adjust`。既定1 dB、0超〜6 dBでボタンごとに設定（1 / 2 / 3 / 6 dBなど）。現在の dB を表示 |
 | Emergency Mute ON | `emergency.set({active:true})` のみ。緊急ミュートの有効状態を表示。解除は ParaBus で行います |
 
-参加者は17〜20桁の Discord ユーザー ID（文字列）または1始まりの slot を選択します。slot は全員、または VC Bus 内の現在の並び順です。並び順と `expectedParticipantsRevision` は最新 state から取得し、設定には保存しません。オフラインの参加者や存在しない Send には送信を予約しません。
+**参加者の MIX（Send）** は、参加者 → 選択した VC MIX の On/Off とレベルを操作する対象です。参加者は17〜20桁の Discord ユーザー ID（文字列）または1始まりの slot を選択します。slot は全員、または VC Bus 内の現在の並び順です。並び順と `expectedParticipantsRevision` は最新 state から取得し、設定には保存しません。オフラインの参加者や存在しない Send には送信を予約しません。
 
-Bus は state から得た ID を選択します。`external-bus:...` の別名はそのまま保存し、ラベルや Discord の内部 ID から生成しません。ParaBus 側で別名鍵を変更した場合は選択し直します。Send と slot の範囲は VC Bus を選択します。TX は `profileId` で選択します。`NO_BOT` は表示し、操作を送りません。
+旧 **Participant / 参加者**（`target: channel`）は、API の `channel.fader.*`・`channel.mute.*` の廃止に合わせて削除しました。保存済みの旧対象ボタンは `SETUP` を表示し、操作を送りません。対応する対象を選び直してボタンを保存してください。state の `participants[].faderDb`・`mute` は不要で、旧フィールドが残っていても使用しません。参加者の MIX（Send）は `participants[].sends[].db`・`mute` を使用します。
+
+Bus は state から得た ID を選択します。`external-bus:...` の別名はそのまま保存し、ラベルや Discord の内部 ID から生成しません。ParaBus 側で別名鍵を変更した場合は選択し直します。参加者の MIX（Send）の送信先と slot の範囲は VC Bus を選択します。TX は `profileId` で選択します。`NO_BOT` は表示し、操作を送りません。
 
 ボタン設定に保存するものは対象種別、対象 ID、slot の範囲・番号、一回の量だけです。参加者表示名は `readDisplayNames` が許可されたときだけ候補の文字列として表示し、保存しません。
 

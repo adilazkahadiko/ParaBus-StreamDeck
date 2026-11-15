@@ -99,3 +99,14 @@ Git identity is copied from the source repository into this repository's **local
 ## Profile-export manual verification
 
 **Completed 2026-11-16.** A profile exported from the actual Stream Deck app was inspected; no token was present. ParaBus button settings contained only `target`, `participant`, `discordUserId`, `busId`, and `stepDb`. The only token-shaped strings were `external-bus:` aliases in `busId`.
+
+## ParaBus beta.6候補版とStream Deck MK.2の実機確認
+
+**確認日: 2026-11-16。** 利用者からの実機確認報告に基づく記録です。ParaBus beta.6候補版とStream Deck MK.2の実機で、次を確認済みです。
+
+- 参加者のMIX（Send）のミュートとフェーダー。DiscordユーザーID指定とSlot指定の両方。
+- Busのミュートとフェーダー。
+- 緊急ミュートON。
+- 操作がParaBusの画面へすぐ反映されること。
+
+表示名、ユーザーIDの実値、トークンは記録しません。この記録の追記時にCodexがアプリを起動・終了したり、Botへ接続したり、音声ストリームを開始したりしたものではありません。

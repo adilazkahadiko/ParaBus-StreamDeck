@@ -2,6 +2,8 @@
 
 ParaBus 外部操作 API v1 を使う段階3の最初の版です。Windows 10 以降、Stream Deck アプリ 7.1 以降、Stream Deck MK.2 のボタンを対象にします。ライセンスは GPL-3.0-only（[LICENSE](LICENSE)）です。
 
+このプラグインには **ParaBus v0.1.0-beta.6 以降**が必要です。beta.5以前には外部操作APIがありません。本体は[ParaBus beta.6の配布ページ](https://github.com/adilazkahadiko/ParaBus/releases/tag/v0.1.0-beta.6)から入手してください。
+
 ## 導入
 
 開発用の Node.js 24 と npm を用意し、このリポジトリで実行します。Stream Deck アプリ内の実行用 Node はアプリ側が管理します。

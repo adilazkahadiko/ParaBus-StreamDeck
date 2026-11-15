@@ -1,6 +1,6 @@
 # Stage 3 verification
 
-Verified locally on Windows, 2026-11-07 (JST). This report describes automated mock verification; it does not claim Stream Deck hardware or profile-export verification.
+Automated mock verification was performed locally on Windows, 2026-11-07 (JST). The completed profile-export inspection is recorded below.
 
 ## Contract and scope
 
@@ -30,7 +30,7 @@ The npm `latest` dist-tags were checked using `npm.cmd view` and exact versions 
 
 Manifest: `Nodejs.Version: "24"`, `Software.MinimumVersion: "7.1"`, Windows 10+. The [official runtime table](https://docs.elgato.com/streamdeck/sdk/introduction/plugin-environment/) lists Node **24.22.1** for current Stream Deck releases, including 7.1's automatically updated runtimes. [SDK v3 requires Stream Deck 7.1+](https://docs.elgato.com/streamdeck/sdk/upgrading/v3/). The major is fixed by the manifest; Stream Deck manages patch updates.
 
-A standalone official Windows x64 Node 24.22.1 executable was downloaded under ignored `.tools/`, checked against the official `SHASUMS256.txt`, and used to run the final test suite and its actual bundled SDK child process. This is not evidence about the runtime currently installed in the maintainer's Stream Deck application, which was not launched.
+A standalone official Windows x64 Node 24.22.1 executable was downloaded under ignored `.tools/`, checked against the official `SHASUMS256.txt`, and used to run the final test suite and its actual bundled SDK child process. That automated run did not launch the Stream Deck app or verify its installed runtime.
 
 Node's browser-compatible global WebSocket does not expose arbitrary handshake headers. `ws` supports `Authorization: Bearer` in client options and is already required by the official SDK, so the plugin uses that exact deduplicated package. [ws client options](https://github.com/websockets/ws/blob/master/doc/ws.md#new-websocketaddress-protocols-options) document the Node HTTP options used for headers. HTTP uses `node:http`, avoiding fetch metadata entirely. Both clients fix the host to `127.0.0.1` and do not follow redirects. Requests have bounded response sizes and deadlines. The WS client answers server pings through ws, expects the initial state within 5 seconds and observes a 45-second liveness deadline.
 
@@ -91,8 +91,8 @@ The installer and compiled outputs are ignored and are not committed.
 
 No real ParaBus credential was used or found in the authored files. Mock credentials are generated in memory, transmitted only on the mock authorization / global-setting / input paths, and excluded from diagnostics. Dependency and contract examples are not production credentials. No token hash or bearer value is included in this report.
 
-Git identity is copied from the source repository into this repository's **local** config. Both values match the source; the email also matches the public GitHub account's noreply address, checked without printing it. There is no remote and no push was performed.
+Git identity is copied from the source repository into this repository's **local** config. Both values match the source; the email also matches the public GitHub account's noreply address, checked without printing it. At the initial local verification, there was no remote and no push had been performed.
 
-## Manual release checks still pending
+## Profile-export manual verification
 
-The maintainer must check actual MK.2 rendering, installation and the Stream Deck app's profile export. The [Japanese README](../README.ja.md#プロファイル書き出しの手動確認) provides the complete export inspection procedure. Global-settings separation and mock tests do not prove that a particular Stream Deck application version excludes credentials from exported profiles. These manual checks are **not** counted as skipped automated tests.
+**Completed 2026-11-16.** A profile exported from the actual Stream Deck app was inspected; no token was present. ParaBus button settings contained only `target`, `participant`, `discordUserId`, `busId`, and `stepDb`. The only token-shaped strings were `external-bus:` aliases in `busId`.

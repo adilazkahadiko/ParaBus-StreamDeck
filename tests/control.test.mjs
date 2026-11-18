@@ -185,7 +185,7 @@ for (const code of [4001, 4003]) test(`close ${code} without reason: ${code === 
   assert.equal(clock.jobs.size, code === 4001 ? 0 : 1); assert.equal(server.actions.length, 0);
 });
 
-test('beta.6 permission close 4001 probes state once, reconnects on 200, and stops a consecutive 4001', async t => {
+test('beta.6 permission close 4001 probes state once, reconnects on 200, and stops an immediate consecutive 4001', async t => {
   const { server, client, clock } = await setup(t), baseline = server.requests.length;
   server.state.permissions.readDisplayNames = true;
   server.disconnect(4001);
@@ -217,14 +217,75 @@ test('close 4005 refetches permissions immediately without backoff or action rep
   assert.equal(clock.jobs.size, 0); assert.equal(server.actions.length, 0);
 });
 
-test('later beta.6 permissions change can recover again after 30 stable seconds', async t => {
+test('three beta.6 permission changes ten seconds apart each probe and reconnect', async t => {
   const { server, client, clock } = await setup(t);
-  for (const names of [true, false]) {
+  for (const names of [true, false, true]) {
+    clock.advance(10000);
+    const baseline = server.requests.length;
     server.state.permissions.readDisplayNames = names; server.disconnect(4001);
     await until(() => client.status === 'CONNECTED' && client.state.permissions.readDisplayNames === names);
-    clock.advance(30000);
+    assert.deepEqual(server.requests.slice(baseline).map(r => r.path), ['/external/v1/state', '/external/v1/info', '/external/v1/state', '/external/v1/ws']);
+    assert.ok(server.requests.slice(baseline).every(r => r.auth));
   }
   assert.equal(server.actions.length, 0);
+});
+
+for (const elapsed of [2000, 2001]) test(`4001 at ${elapsed} ms after reconnect: ${elapsed === 2000 ? 'stop' : 'probe and reconnect'}`, async t => {
+  const { server, client, clock } = await setup(t);
+  let baseline = server.requests.length; server.disconnect(4001);
+  await until(() => server.requests.length > baseline && client.status === 'CONNECTED');
+  clock.advance(elapsed); baseline = server.requests.length; server.disconnect(4001);
+  if (elapsed === 2000) {
+    await until(() => client.status === 'UNAUTHORIZED'); clock.advance(60000);
+    assert.equal(server.requests.length, baseline); assert.equal(client.state, undefined);
+  } else {
+    await until(() => server.requests.length > baseline && client.status === 'CONNECTED');
+    assert.equal(server.requests.length - baseline, 4);
+  }
+  assert.equal(clock.jobs.size, 0); assert.equal(server.actions.length, 0);
+});
+
+test('sixth 4001 check in sixty seconds stops without another HTTP probe', async t => {
+  const { server, client, clock } = await setup(t);
+  for (let i = 0; i < 5; i++) {
+    clock.advance(3000); const baseline = server.requests.length; server.disconnect(4001);
+    await until(() => server.requests.length > baseline && client.status === 'CONNECTED');
+    assert.equal(server.requests.length - baseline, 4);
+  }
+  clock.advance(3000); const baseline = server.requests.length; server.disconnect(4001);
+  await until(() => client.status === 'UNAUTHORIZED'); clock.advance(60000);
+  assert.equal(server.requests.length, baseline); assert.equal(clock.jobs.size, 0); assert.equal(server.actions.length, 0);
+});
+
+test('4001 check budget expires after sixty seconds rather than requiring a thirty-second stable connection', async t => {
+  const { server, client, clock } = await setup(t);
+  for (let i = 0; i < 5; i++) {
+    const baseline = server.requests.length; server.disconnect(4001);
+    await until(() => server.requests.length > baseline && client.status === 'CONNECTED');
+    clock.advance(3000);
+  }
+  clock.advance(45000); // Exactly sixty seconds after the first check: it leaves the rolling window.
+  const baseline = server.requests.length; server.disconnect(4001);
+  await until(() => server.requests.length > baseline && client.status === 'CONNECTED');
+  assert.equal(server.requests.length - baseline, 4); assert.equal(server.actions.length, 0);
+});
+
+test('presses during the 4001 HTTP check share the probe and never send or queue actions', async t => {
+  const { server, client, clock, buttons, sink } = await setup(t); let release;
+  server.beforeState = () => new Promise(resolve => { release = resolve; });
+  t.after(() => release?.());
+  const baseline = server.requests.length; server.disconnect(4001);
+  await until(() => release);
+  assert.equal(client.status, 'CONNECTING'); assert.equal(client.state, undefined);
+  for (const kind of ['mute', 'fader-up', 'fader-down', 'emergency']) {
+    buttons.attach(kind, kind, { target: 'bus', busId }, sink); await buttons.press(kind);
+  }
+  assert.equal(server.requests.length, baseline + 1); assert.equal(server.actions.length, 0);
+  clock.advance(10000); server.beforeState = undefined; release();
+  await until(() => client.status === 'CONNECTED');
+  assert.equal(server.requests.length, baseline + 4); assert.equal(server.actions.length, 0);
+  server.disconnect(4001); await until(() => client.status === 'UNAUTHORIZED');
+  assert.equal(server.requests.length, baseline + 4); // Two-second guard starts at reconnect, not the probe.
 });
 
 test('Bus labels are optional, permission-gated, sanitized and replaced by kind/order labels', async () => {

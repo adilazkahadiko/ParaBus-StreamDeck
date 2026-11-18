@@ -29,7 +29,9 @@ export class ParaBusClient {
   private watchdog?: ReturnType<typeof setTimeout>;
   private attempt = 0;
   private connectedAt?: number;
-  private checkedAuthClose = false;
+  private authCloseChecks: number[] = [];
+  private authReconnectPending = false;
+  private authReconnectedAt?: number;
   private operations = new Set<string>();
   private listeners = new Set<() => void>();
   constructor(private clock: Clock = realClock) {}
@@ -37,7 +39,8 @@ export class ParaBusClient {
   private changed(): void { for (const fn of this.listeners) fn(); }
   get connectionSettings(): { port: number; tokenConfigured: boolean } { return { port: this.config.port, tokenConfigured: !!this.config.token }; }
   configure(value: unknown): void {
-    this.stop(); this.config = globalSettings(value); this.attempt = 0; this.checkedAuthClose = false;
+    this.stop(); this.config = globalSettings(value); this.attempt = 0;
+    this.authCloseChecks = []; this.authReconnectPending = false; this.authReconnectedAt = undefined;
     if (!this.config.token) { this.status = 'CONFIGURE'; this.changed(); return; }
     this.stopped = false; void this.connect(this.generation);
   }
@@ -116,6 +119,11 @@ export class ParaBusClient {
         handshakeTimeout: 5000, maxPayload: 1024 * 1024, perMessageDeflate: false
       });
       this.ws = ws;
+      ws.on('open', () => {
+        if (this.live(g) && ws === this.ws && this.authReconnectPending) {
+          this.authReconnectedAt = this.clock.now(); this.authReconnectPending = false;
+        }
+      });
       const watch = (ms: number) => {
         if (this.watchdog) clearTimeout(this.watchdog);
         this.watchdog = setTimeout(() => { if (this.live(g) && ws === this.ws) this.reconnect(g, new ApiError('OFFLINE')); }, ms);
@@ -167,16 +175,18 @@ export class ParaBusClient {
   }
   /** beta.6 also used 4001 for permissions. One authenticated probe, never an action replay. */
   private async checkAuthClose(g: number): Promise<void> {
-    // A later permission change may be recovered after 30 seconds of stable connection.
-    if (this.connectedAt !== undefined && this.clock.now() - this.connectedAt >= 30000) this.checkedAuthClose = false;
-    if (this.checkedAuthClose) { this.halt('UNAUTHORIZED'); return; }
-    this.checkedAuthClose = true;
+    const now = this.clock.now();
+    this.authCloseChecks = this.authCloseChecks.filter(at => now - at < 60000);
+    if ((this.authReconnectedAt !== undefined && now - this.authReconnectedAt <= 2000) || this.authCloseChecks.length >= 5) {
+      this.halt('UNAUTHORIZED'); return;
+    }
+    this.authCloseChecks.push(now);
     this.ws = undefined; this.state = undefined; this.connectedAt = undefined;
     if (this.watchdog) clearTimeout(this.watchdog); this.watchdog = undefined;
     this.connecting = true; this.status = 'CONNECTING'; this.changed();
     try {
       await this.http('/state');
-      if (this.live(g)) this.reconnect(g, new ApiError('OFFLINE'), true);
+      if (this.live(g)) { this.authReconnectPending = true; this.reconnect(g, new ApiError('OFFLINE'), true); }
     } catch (e) {
       if (this.live(g)) this.reconnect(g, e instanceof ApiError ? e : new ApiError('UNAVAILABLE'));
     }

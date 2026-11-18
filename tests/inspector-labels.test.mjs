@@ -95,3 +95,12 @@ test('disambiguation changes only PI strings, never action/global settings or so
   assert.deepEqual(global(), { port: 4175, token: '' });
   assert.ok(!JSON.stringify({ saved, global: global() }).includes('Synthetic'));
 });
+
+test('PI snapshot exposes state availability independently of empty user and Bus lists', t => {
+  const { client, inspector } = setup(t);
+  assert.equal(inspector.snapshot('key').hasState, true);
+  client.state = undefined;
+  assert.equal(inspector.snapshot('key').hasState, false);
+  assert.deepEqual(inspector.snapshot('key').users, []);
+  assert.deepEqual(inspector.snapshot('key').buses, []);
+});

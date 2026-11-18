@@ -31,7 +31,7 @@ export class Inspector {
       return { ...bus, label };
     });
     return {
-      type: 'status', ...client.connectionSettings, status: client.status,
+      type: 'status', ...client.connectionSettings, status: client.status, hasState: state !== undefined,
       ...(includeSettings ? { settings: this.buttons.settings(id) } : {}),
       users, buses,
       profiles: state?.tx.bots.map(b => b.profileId) ?? []

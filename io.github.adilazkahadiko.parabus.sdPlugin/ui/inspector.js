@@ -1,23 +1,24 @@
 /* Browser UI talks only to Stream Deck's registration socket, never to ParaBus. */
 'use strict';
-let socket, context, action, kind, choices = { buses: [], profiles: [], users: [] };
+let socket, context, action, kind, choices = { buses: [], profiles: [], users: [], hasState: false };
 const element = id => document.getElementById(id);
 function send(payload) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event: 'sendToPlugin', action, context, payload }));
 }
+function missingLabel(value) { return `${value}（${choices.hasState ? '見つかりません' : '未接続'}）`; }
 function fill(id, options, emptyLabel) {
   const select = element(id), value = select.value;
   select.replaceChildren();
   if (emptyLabel) select.add(new Option(emptyLabel, ''));
   for (const item of options) select.add(new Option(item.label ?? item.id, item.id));
-  if (value && !options.some(o => o.id === value)) select.add(new Option(`${value} (unavailable / 未接続)`, value));
+  if (value && !options.some(o => o.id === value)) select.add(new Option(missingLabel(value), value));
   select.value = value;
 }
 function fillUsers() {
   const select = element('userSelect'), value = select.value;
   select.replaceChildren(new Option('Select participant / 参加者を選択', ''));
   for (const user of choices.users) select.add(new Option(user.label, user.id));
-  if (value && value !== 'manual' && !choices.users.some(u => u.id === value)) select.add(new Option(`${value}（見つかりません）`, value));
+  if (value && value !== 'manual' && !choices.users.some(u => u.id === value)) select.add(new Option(missingLabel(value), value));
   select.add(new Option('ID を直接入力 / Enter ID', 'manual'));
   select.value = value;
   element('manualUserField').hidden = value !== 'manual';
@@ -41,13 +42,13 @@ function applySettings(s) {
   element('userSelect').value = s.discordUserId ?? '';
   // Insert saved IDs before selecting: native <select> ignores values absent from its options.
   if (s.discordUserId && ![...element('userSelect').options].some(o => o.value === s.discordUserId)) {
-    element('userSelect').add(new Option(`${s.discordUserId}（見つかりません）`, s.discordUserId));
+    element('userSelect').add(new Option(missingLabel(s.discordUserId), s.discordUserId));
     element('userSelect').value = s.discordUserId;
   }
   updateFields();
   for (const id of ['busId', 'scopeBusId', 'profileId']) {
     const value = s[id] ?? '';
-    if (value && ![...element(id).options].some(o => o.value === value)) element(id).add(new Option(value, value));
+    if (value && ![...element(id).options].some(o => o.value === value)) element(id).add(new Option(missingLabel(value), value));
     element(id).value = value;
   }
 }
@@ -67,10 +68,13 @@ window.connectElgatoStreamDeckSocket = (port, uuid, registerEvent, _info, action
     element('status').textContent = String(p.status);
     element('configured').textContent = p.tokenConfigured ? 'Token: configured / 設定済み' : 'Token: not configured / 未設定';
     if (document.activeElement !== element('port')) element('port').value = p.port;
-    choices = { buses: p.buses, profiles: p.profiles, users: p.users };
+    choices = { buses: p.buses, profiles: p.profiles, users: p.users, hasState: p.hasState === true };
     if (p.settings) applySettings(p.settings); else updateFields();
   };
-  socket.onclose = () => { element('token').value = ''; element('status').textContent = 'Plugin disconnected / 切断'; };
+  socket.onclose = () => {
+    element('token').value = ''; element('status').textContent = 'Plugin disconnected / 切断';
+    choices = { buses: [], profiles: [], users: [], hasState: false }; updateFields();
+  };
 };
 element('target').addEventListener('change', updateFields);
 element('participant').addEventListener('change', updateFields);

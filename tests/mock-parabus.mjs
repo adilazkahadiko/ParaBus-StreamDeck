@@ -26,6 +26,7 @@ export class MockParaBus {
   failure;
   pathFailures = {};
   beforeInfo;
+  beforeState;
   actionFailure;
   upgradeFailure;
   dropAction = false;
@@ -57,6 +58,7 @@ export class MockParaBus {
   async http(req, res) {
     if (!this.capture(req)) { this.json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: 'Mock auth' }); return; }
     if (req.url === '/external/v1/info') await this.beforeInfo?.();
+    if (req.url === '/external/v1/state') await this.beforeState?.();
     const failure = this.failure ?? this.pathFailures[req.url];
     if (failure) { this.json(res, failure.status, { ok: false, code: failure.code, message: 'Mock failure' }); return; }
     if (req.url === '/external/v1/info') {

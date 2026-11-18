@@ -98,7 +98,7 @@ test('PI sanitized legacy settings stay unselected until a new target is chosen'
 test('PI participant select shows names/IDs and preserves a saved missing ID with its numeric value', () => {
   const { element, socket } = ui();
   const send = payload => socket.onmessage({ data: JSON.stringify({ event: 'sendToPropertyInspector', payload: {
-    type: 'status', status: 'CONNECTED', port: 4175, tokenConfigured: true, buses: [], profiles: [], ...payload
+    type: 'status', status: 'CONNECTED', hasState: true, port: 4175, tokenConfigured: true, buses: [], profiles: [], ...payload
   } }) });
   const saved = '100000000000000009';
   send({ users: [{ id: '100000000000000001', label: 'Synthetic Guest ●' }, { id: '100000000000000002', label: '100000000000000002' }],
@@ -140,4 +140,26 @@ test('PI manual ID mode and named Bus/scope selectors save only the existing set
   element('scopeBusId').value = 'vc-bus'; element('saveButton').events.click();
   assert.deepEqual(socket.messages.at(-1).payload.settings, { target: 'send', participant: 'slot', index: 1, scopeBusId: 'vc-bus', busId: 'vc-bus', stepDb: 2 });
   assert.ok(!JSON.stringify(socket.messages).includes('Synthetic VC'));
+});
+
+test('PI saved participant/Bus/scope IDs distinguish no state from connected missing choices without changing values', () => {
+  const { element, socket } = ui(), user = '100000000000000009', bus = 'synthetic-missing-bus';
+  const status = (hasState, settings) => socket.onmessage({ data: JSON.stringify({ event: 'sendToPropertyInspector', payload: {
+    type: 'status', status: hasState ? 'CONNECTED' : 'CONNECTING', hasState, port: 4175, tokenConfigured: true,
+    users: [], buses: [], profiles: [], ...(settings ? { settings } : {})
+  } }) });
+  const settings = { target: 'send', participant: 'user', discordUserId: user, busId: bus, scopeBusId: bus, stepDb: 2 };
+  const check = message => {
+    for (const [id, value] of [['userSelect', user], ['busId', bus], ['scopeBusId', bus]]) {
+      assert.equal(element(id).value, value);
+      assert.equal(element(id).options.find(o => o.value === value).label, `${value}（${message}）`);
+    }
+  };
+  status(false, settings); check('未接続');
+  status(true); check('見つかりません');
+  status(true, settings); check('見つかりません');
+  status(false); check('未接続');
+  element('saveButton').events.click();
+  assert.deepEqual(socket.messages.at(-1).payload.settings, { target: 'send', participant: 'user', discordUserId: user, busId: bus, stepDb: 2 });
+  status(true); check('見つかりません'); socket.onclose(); check('未接続');
 });

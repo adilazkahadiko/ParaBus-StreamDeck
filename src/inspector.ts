@@ -10,13 +10,30 @@ export class Inspector {
   constructor(private buttons: Buttons, private store: SettingsStore) {}
   snapshot(id: string, includeSettings = false) {
     const client = this.buttons.client, state = client.state;
+    const names = new Map<string, string[]>();
+    if (state?.permissions.readDisplayNames) for (const user of state.registeredUsers) if (user.displayName) {
+      const key = user.displayName.trim().toLowerCase(), group = names.get(key) ?? [];
+      group.push(user.discordUserId); names.set(key, group);
+    }
+    const users = state?.registeredUsers.map(user => {
+      if (!state.permissions.readDisplayNames || !user.displayName) return { id: user.discordUserId, label: user.discordUserId };
+      const group = names.get(user.displayName.trim().toLowerCase())!, tail = user.discordUserId.slice(-4);
+      const suffix = group.length > 1 ? ` (${group.filter(id => id.endsWith(tail)).length > 1 ? user.discordUserId : `…${tail}`})` : '';
+      return { id: user.discordUserId, label: `${user.displayName}${suffix}${user.online ? ' ●' : ''}` };
+    }) ?? [];
+    const busChoices = state?.buses.map((bus, index) => ({ id: bus.busId, kind: bus.kind,
+      label: state.permissions.readDisplayNames && bus.label ? bus.label : `${bus.kind === 'vc' ? 'VC Bus' : 'Bus'} ${index + 1}` })) ?? [];
+    const reserved = new Set(busChoices.map(bus => bus.label)), used = new Set<string>(), counts = new Map<string, number>();
+    const buses = busChoices.map(bus => {
+      let label = bus.label, count = counts.get(label) ?? 1;
+      if (used.has(label)) do { label = `${bus.label} (${++count})`; } while (reserved.has(label) || used.has(label));
+      counts.set(bus.label, count); used.add(label);
+      return { ...bus, label };
+    });
     return {
       type: 'status', ...client.connectionSettings, status: client.status,
       ...(includeSettings ? { settings: this.buttons.settings(id) } : {}),
-      users: state?.registeredUsers.map(u => ({ id: u.discordUserId,
-        label: state.permissions.readDisplayNames && u.displayName ? `${u.displayName}${u.online ? ' ●' : ''}` : u.discordUserId })) ?? [],
-      buses: state?.buses.map((b, index) => ({ id: b.busId, kind: b.kind,
-        label: state.permissions.readDisplayNames && b.label ? b.label : `${b.kind === 'vc' ? 'VC Bus' : 'Bus'} ${index + 1}` })) ?? [],
+      users, buses,
       profiles: state?.tx.bots.map(b => b.profileId) ?? []
     };
   }

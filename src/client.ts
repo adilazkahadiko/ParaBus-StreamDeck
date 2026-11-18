@@ -29,6 +29,7 @@ export class ParaBusClient {
   private watchdog?: ReturnType<typeof setTimeout>;
   private attempt = 0;
   private connectedAt?: number;
+  private checkedAuthClose = false;
   private operations = new Set<string>();
   private listeners = new Set<() => void>();
   constructor(private clock: Clock = realClock) {}
@@ -36,7 +37,7 @@ export class ParaBusClient {
   private changed(): void { for (const fn of this.listeners) fn(); }
   get connectionSettings(): { port: number; tokenConfigured: boolean } { return { port: this.config.port, tokenConfigured: !!this.config.token }; }
   configure(value: unknown): void {
-    this.stop(); this.config = globalSettings(value); this.attempt = 0;
+    this.stop(); this.config = globalSettings(value); this.attempt = 0; this.checkedAuthClose = false;
     if (!this.config.token) { this.status = 'CONFIGURE'; this.changed(); return; }
     this.stopped = false; void this.connect(this.generation);
   }
@@ -157,13 +158,30 @@ export class ParaBusClient {
       ws.on('close', code => {
         if (!this.live(g) || ws !== this.ws) return;
         // Close codes select connection policy, never establish a past operation's result.
-        if (code === 4001) this.halt('UNAUTHORIZED');
+        if (code === 4001) void this.checkAuthClose(g);
+        else if (code === 4005) this.reconnect(g, new ApiError('OFFLINE'), true);
         else if (code === 4003) this.reconnect(g, new ApiError('DISABLED'));
         else this.reconnect(g, new ApiError('OFFLINE'));
       });
     } catch (e) { if (this.live(g)) this.reconnect(g, e instanceof ApiError ? e : new ApiError('UNAVAILABLE')); }
   }
-  private reconnect(g: number, error: ApiError): void {
+  /** beta.6 also used 4001 for permissions. One authenticated probe, never an action replay. */
+  private async checkAuthClose(g: number): Promise<void> {
+    // A later permission change may be recovered after 30 seconds of stable connection.
+    if (this.connectedAt !== undefined && this.clock.now() - this.connectedAt >= 30000) this.checkedAuthClose = false;
+    if (this.checkedAuthClose) { this.halt('UNAUTHORIZED'); return; }
+    this.checkedAuthClose = true;
+    this.ws = undefined; this.state = undefined; this.connectedAt = undefined;
+    if (this.watchdog) clearTimeout(this.watchdog); this.watchdog = undefined;
+    this.connecting = true; this.status = 'CONNECTING'; this.changed();
+    try {
+      await this.http('/state');
+      if (this.live(g)) this.reconnect(g, new ApiError('OFFLINE'), true);
+    } catch (e) {
+      if (this.live(g)) this.reconnect(g, e instanceof ApiError ? e : new ApiError('UNAVAILABLE'));
+    }
+  }
+  private reconnect(g: number, error: ApiError, immediate = false): void {
     if (!this.live(g)) return;
     if (['UNAUTHORIZED', 'INCOMPATIBLE'].includes(error.code)) { this.halt(error.code); return; }
     if (error.code === 'DISABLED') this.disabledPolling = true;
@@ -173,6 +191,8 @@ export class ParaBusClient {
     const ws = this.ws; this.ws = undefined; ws?.terminate();
     if (this.watchdog) clearTimeout(this.watchdog); this.watchdog = undefined;
     if (this.timer) this.clock.clearTimeout(this.timer);
+    this.timer = undefined;
+    if (immediate) { this.reconnectDelay = undefined; void this.connect(g); return; }
     this.reconnectDelay = this.disabledPolling ? 5000 : Math.max(backoff(this.attempt++, this.clock.random()), error.retryAfterMs);
     this.changed();
     this.timer = this.clock.setTimeout(() => { this.timer = undefined; void this.connect(g); }, this.reconnectDelay);

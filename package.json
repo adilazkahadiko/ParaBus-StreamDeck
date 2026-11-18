@@ -1,6 +1,6 @@
 {
   "name": "parabus-streamdeck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Local Stream Deck buttons for the ParaBus external control API v1",
   "scripts": {

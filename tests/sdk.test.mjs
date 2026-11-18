@@ -26,7 +26,7 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
       else received.push(msg);
     });
   });
-  const info = { application: { version: '7.1.0', platform: 'windows', platformVersion: '10', language: 'en' }, plugin: { uuid: root, version: '0.1.0.0' },
+  const info = { application: { version: '7.1.0', platform: 'windows', platformVersion: '10', language: 'en' }, plugin: { uuid: root, version: '0.1.1.0' },
     devices: [{ id: 'mock-mk2', name: 'Mock MK.2', type: 0, size: { columns: 5, rows: 3 } }], devicePixelRatio: 1, colors: {} };
   // Test-only preload injects a real unhandled rejection; production has no test hook.
   const preload = "process.on('message', value => { if (value === 'test-rejection') void Promise.reject(new Error('Synthetic test rejection')); });";

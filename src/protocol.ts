@@ -9,7 +9,7 @@ export type State = {
   participants: { discordUserId: string; sends: { busId: string; db: number; mute: boolean }[]; displayName?: string }[];
   registeredUsers: { discordUserId: string; online: boolean; displayName?: string }[];
   participantOrders: { scope: Scope; users: string[] }[];
-  buses: { busId: string; kind: string; masterDb: number; mute: boolean }[];
+  buses: { busId: string; kind: string; label?: string; masterDb: number; mute: boolean }[];
   tx: { bots: { profileId: string; masterDb: number; state: string }[] };
   permissions: { readDisplayNames: boolean };
 };
@@ -43,7 +43,9 @@ export function parseState(value: unknown): State {
     }; }),
     registeredUsers: array(v.registeredUsers).map(x => { const p = record(x); return { discordUserId: text(p.discordUserId), online: bool(p.online), ...name(p) }; }),
     participantOrders: array(v.participantOrders).map(x => { const p = record(x); return { scope: scope(p.scope), users: array(p.users).map(text) }; }),
-    buses: array(v.buses).map(x => { const b = record(x); return { busId: text(b.busId), kind: text(b.kind), masterDb: db(b.masterDb), mute: bool(b.mute) }; }),
+    buses: array(v.buses).map(x => { const b = record(x), label = names ? displayName(b.label) : undefined; return {
+      busId: text(b.busId), kind: text(b.kind), ...(label ? { label } : {}), masterDb: db(b.masterDb), mute: bool(b.mute)
+    }; }),
     tx: { bots: array(record(v.tx).bots).map(x => { const b = record(x); return { profileId: text(b.profileId), masterDb: db(b.masterDb), state: text(b.state) }; }) }
   };
 }

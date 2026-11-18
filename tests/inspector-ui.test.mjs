@@ -8,13 +8,20 @@ const html = await readFile('io.github.adilazkahadiko.parabus.sdPlugin/ui/inspec
 function ui(kind = 'fader-up') {
   const elements = new Map(), connections = [];
   const element = id => {
-    if (!elements.has(id)) elements.set(id, {
+    if (!elements.has(id)) {
+      const item = {
       value: ({ target: '', participant: 'user', index: '1', stepDb: '1', port: '4175' })[id] ?? '',
       hidden: false, options: [], textContent: '', events: {},
-      add(o) { this.options.push(o); }, replaceChildren(...items) { this.options = items; },
+      add(o) { this.options.push(o); }, replaceChildren(...items) { this.options = items; if (id === 'userSelect') this.value = items[0]?.value ?? ''; },
       addEventListener(event, fn) { this.events[event] = fn; },
       querySelector() { return { remove() {} }; }
-    });
+      };
+      if (id === 'userSelect') {
+        let value = '';
+        Object.defineProperty(item, 'value', { get: () => value, set: next => { value = item.options.some(o => o.value === next) ? next : ''; } });
+      }
+      elements.set(id, item);
+    }
     return elements.get(id);
   };
   class Socket {
@@ -36,6 +43,7 @@ test('PI browser: only Stream Deck socket, write-only password, global token mes
   assert.equal(element('token').value, '');
   assert.ok(socket.messages.some(m => m.payload?.type === 'connection.save' && m.payload.token === secret));
   element('target').value = 'send'; element('busId').value = 'external-bus:test';
+  element('userSelect').value = 'manual'; element('userSelect').events.change();
   element('discordUserId').value = '100000000000000001'; element('stepDb').value = '3'; element('saveButton').events.click();
   const settings = socket.messages.find(m => m.payload?.type === 'button.save').payload.settings;
   assert.ok(!JSON.stringify(settings).includes(secret)); assert.equal(settings.stepDb, 3);
@@ -43,11 +51,12 @@ test('PI browser: only Stream Deck socket, write-only password, global token mes
   assert.deepEqual(connections.map(c => c.url), ['ws://127.0.0.1:45678']);
   socket.onmessage({ data: JSON.stringify({ event: 'sendToPropertyInspector', payload: { type: 'status', port: 4175, status: 'CONNECTED', tokenConfigured: true,
     users: [{ id: '100000000000000001', label: '<script>test</script>' }], buses: [], profiles: [] } }) });
-  assert.equal(element('token').value, ''); assert.equal(element('users').options[0].textContent, '<script>test</script>');
+  assert.equal(element('token').value, ''); assert.equal(element('userSelect').options[1].label, '<script>test</script>');
 });
 test('PI browser validates button values and clears password on disconnect', () => {
   const { element, socket } = ui();
   element('target').value = 'send';
+  element('userSelect').value = 'manual'; element('userSelect').events.change();
   element('discordUserId').value = 'not-an-id'; element('saveButton').events.click();
   assert.ok(!socket.messages.some(m => m.payload?.type === 'button.save'));
   element('discordUserId').value = '100000000000000001'; element('stepDb').value = '7'; element('saveButton').events.click();
@@ -79,8 +88,56 @@ test('PI sanitized legacy settings stay unselected until a new target is chosen'
   element('target').value = 'send'; element('target').events.change();
   assert.equal(element('participantFields').hidden, false);
   assert.deepEqual(element('busId').options.map(o => o.value), ['vc-bus']);
+  element('userSelect').value = 'manual'; element('userSelect').events.change();
   element('discordUserId').value = '100000000000000001'; element('busId').value = 'vc-bus';
   element('saveButton').events.click();
   assert.deepEqual(socket.messages.find(m => m.payload?.type === 'button.save').payload.settings,
     { target: 'send', participant: 'user', discordUserId: '100000000000000001', busId: 'vc-bus', stepDb: 2 });
+});
+
+test('PI participant select shows names/IDs and preserves a saved missing ID with its numeric value', () => {
+  const { element, socket } = ui();
+  const send = payload => socket.onmessage({ data: JSON.stringify({ event: 'sendToPropertyInspector', payload: {
+    type: 'status', status: 'CONNECTED', port: 4175, tokenConfigured: true, buses: [], profiles: [], ...payload
+  } }) });
+  const saved = '100000000000000009';
+  send({ users: [{ id: '100000000000000001', label: 'Synthetic Guest ●' }, { id: '100000000000000002', label: '100000000000000002' }],
+    settings: { target: 'send', participant: 'user', discordUserId: saved } });
+  assert.equal(element('userSelect').value, saved);
+  assert.equal(element('manualUserField').hidden, true);
+  assert.deepEqual(element('userSelect').options.map(o => [o.value, o.label]), [
+    ['', 'Select participant / 参加者を選択'],
+    ['100000000000000001', 'Synthetic Guest ●'], ['100000000000000002', '100000000000000002'],
+    [saved, `${saved}（見つかりません）`], ['manual', 'ID を直接入力 / Enter ID']
+  ]);
+  element('saveButton').events.click();
+  assert.equal(socket.messages.at(-1).payload.settings.discordUserId, saved);
+  element('userSelect').value = '100000000000000001'; element('userSelect').events.change();
+  element('saveButton').events.click();
+  assert.deepEqual(socket.messages.at(-1).payload.settings, { target: 'send', participant: 'user', discordUserId: '100000000000000001', busId: '', stepDb: 1 });
+  send({ users: [] });
+  assert.equal(element('userSelect').value, '100000000000000001');
+  assert.ok(element('userSelect').options.some(o => o.label === '100000000000000001（見つかりません）'));
+  assert.ok(!element('userSelect').options.some(o => o.label.includes('Synthetic Guest')));
+});
+
+test('PI manual ID mode and named Bus/scope selectors save only the existing settings keys', () => {
+  const { element, socket } = ui();
+  socket.onmessage({ data: JSON.stringify({ event: 'sendToPropertyInspector', payload: {
+    type: 'status', status: 'CONNECTED', port: 4175, tokenConfigured: true,
+    users: [], buses: [{ id: 'vc-bus', kind: 'vc', label: 'Synthetic VC' }, { id: 'other-bus', kind: 'other', label: 'Bus 2' }], profiles: [],
+    settings: { target: 'send', participant: 'user', busId: 'vc-bus', stepDb: 2 }
+  } }) });
+  assert.equal(element('busId').options[0].label, 'Synthetic VC');
+  assert.equal(element('scopeBusId').options.find(o => o.value === 'vc-bus').label, 'Synthetic VC');
+  element('userSelect').value = 'manual'; element('userSelect').events.change();
+  assert.equal(element('manualUserField').hidden, false);
+  element('discordUserId').value = '100000000000000003'; element('saveButton').events.click();
+  assert.deepEqual(socket.messages.at(-1).payload.settings, {
+    target: 'send', participant: 'user', discordUserId: '100000000000000003', busId: 'vc-bus', stepDb: 2
+  });
+  element('participant').value = 'slot'; element('participant').events.change();
+  element('scopeBusId').value = 'vc-bus'; element('saveButton').events.click();
+  assert.deepEqual(socket.messages.at(-1).payload.settings, { target: 'send', participant: 'slot', index: 1, scopeBusId: 'vc-bus', busId: 'vc-bus', stepDb: 2 });
+  assert.ok(!JSON.stringify(socket.messages).includes('Synthetic VC'));
 });

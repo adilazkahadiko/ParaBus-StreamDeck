@@ -13,6 +13,15 @@ function fill(id, options, emptyLabel) {
   if (value && !options.some(o => o.id === value)) select.add(new Option(`${value} (unavailable / 未接続)`, value));
   select.value = value;
 }
+function fillUsers() {
+  const select = element('userSelect'), value = select.value;
+  select.replaceChildren(new Option('Select participant / 参加者を選択', ''));
+  for (const user of choices.users) select.add(new Option(user.label, user.id));
+  if (value && value !== 'manual' && !choices.users.some(u => u.id === value)) select.add(new Option(`${value}（見つかりません）`, value));
+  select.add(new Option('ID を直接入力 / Enter ID', 'manual'));
+  select.value = value;
+  element('manualUserField').hidden = value !== 'manual';
+}
 function updateFields() {
   const target = element('target').value, participant = element('participant').value;
   element('participantFields').hidden = target !== 'send';
@@ -20,6 +29,7 @@ function updateFields() {
   element('slotFields').hidden = participant !== 'slot';
   element('busField').hidden = target !== 'bus' && target !== 'send';
   element('profileField').hidden = target !== 'tx';
+  fillUsers();
   fill('busId', choices.buses.filter(b => target !== 'send' || b.kind === 'vc'));
   fill('scopeBusId', choices.buses.filter(b => b.kind === 'vc'), 'All / 全員');
   fill('profileId', choices.profiles.map(id => ({ id })));
@@ -27,6 +37,12 @@ function updateFields() {
 function applySettings(s) {
   for (const id of ['target', 'participant', 'discordUserId', 'index', 'stepDb']) {
     element(id).value = s[id] ?? ({ target: '', participant: 'user', discordUserId: '', index: 1, stepDb: 1 })[id];
+  }
+  element('userSelect').value = s.discordUserId ?? '';
+  // Insert saved IDs before selecting: native <select> ignores values absent from its options.
+  if (s.discordUserId && ![...element('userSelect').options].some(o => o.value === s.discordUserId)) {
+    element('userSelect').add(new Option(`${s.discordUserId}（見つかりません）`, s.discordUserId));
+    element('userSelect').value = s.discordUserId;
   }
   updateFields();
   for (const id of ['busId', 'scopeBusId', 'profileId']) {
@@ -52,13 +68,13 @@ window.connectElgatoStreamDeckSocket = (port, uuid, registerEvent, _info, action
     element('configured').textContent = p.tokenConfigured ? 'Token: configured / 設定済み' : 'Token: not configured / 未設定';
     if (document.activeElement !== element('port')) element('port').value = p.port;
     choices = { buses: p.buses, profiles: p.profiles, users: p.users };
-    element('users').replaceChildren(...p.users.map(u => { const o = document.createElement('option'); o.value = u.id; o.textContent = u.label; return o; }));
     if (p.settings) applySettings(p.settings); else updateFields();
   };
   socket.onclose = () => { element('token').value = ''; element('status').textContent = 'Plugin disconnected / 切断'; };
 };
 element('target').addEventListener('change', updateFields);
 element('participant').addEventListener('change', updateFields);
+element('userSelect').addEventListener('change', () => { element('manualUserField').hidden = element('userSelect').value !== 'manual'; });
 element('saveConnection').addEventListener('click', () => {
   const port = Number(element('port').value);
   if (!Number.isInteger(port) || port < 1 || port > 65535) { element('status').textContent = 'Invalid port / ポート不正'; return; }
@@ -74,7 +90,7 @@ element('saveButton').addEventListener('click', () => {
     settings.participant = element('participant').value;
     if (settings.participant === 'slot') { settings.index = Number(element('index').value); if (element('scopeBusId').value) settings.scopeBusId = element('scopeBusId').value; }
     else {
-      settings.discordUserId = element('discordUserId').value.trim();
+      settings.discordUserId = element('userSelect').value === 'manual' ? element('discordUserId').value.trim() : element('userSelect').value;
       if (!/^\d{17,20}$/.test(settings.discordUserId)) { element('status').textContent = 'Invalid Discord ID / ID不正'; return; }
     }
   }
@@ -89,3 +105,4 @@ element('saveButton').addEventListener('click', () => {
   }
   send({ type: 'button.save', settings });
 });
+updateFields();

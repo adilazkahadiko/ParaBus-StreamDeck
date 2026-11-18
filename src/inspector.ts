@@ -14,8 +14,9 @@ export class Inspector {
       type: 'status', ...client.connectionSettings, status: client.status,
       ...(includeSettings ? { settings: this.buttons.settings(id) } : {}),
       users: state?.registeredUsers.map(u => ({ id: u.discordUserId,
-        label: state.permissions.readDisplayNames && u.displayName ? `${u.discordUserId} · ${u.displayName}` : u.discordUserId })) ?? [],
-      buses: state?.buses.map(b => ({ id: b.busId, kind: b.kind })) ?? [],
+        label: state.permissions.readDisplayNames && u.displayName ? `${u.displayName}${u.online ? ' ●' : ''}` : u.discordUserId })) ?? [],
+      buses: state?.buses.map((b, index) => ({ id: b.busId, kind: b.kind,
+        label: state.permissions.readDisplayNames && b.label ? b.label : `${b.kind === 'vc' ? 'VC Bus' : 'Bus'} ${index + 1}` })) ?? [],
       profiles: state?.tx.bots.map(b => b.profileId) ?? []
     };
   }

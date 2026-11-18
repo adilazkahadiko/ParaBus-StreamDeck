@@ -177,10 +177,70 @@ test('disconnect, stop, and ambiguous HTTP action failure never change audio aut
   server.dropAction = false; clock.tick(); await until(() => client.status === 'CONNECTED');
   assert.equal(server.actions.length, 1); client.stop(); assert.equal(clock.jobs.size, 0); assert.equal(server.actions.length, 1);
 });
-for (const code of [4001, 4003]) test(`close ${code} without reason: ${code === 4001 ? 'authentication stop' : 'disabled polling'}, no inferred result`, async t => {
-  const { server, client, clock } = await setup(t); server.disconnect(code);
+for (const code of [4001, 4003]) test(`close ${code} without reason: ${code === 4001 ? 'HTTP authentication stop' : 'disabled polling'}, no inferred result`, async t => {
+  const { server, client, clock } = await setup(t);
+  if (code === 4001) server.failure = { status: 401, code: 'UNAUTHORIZED' };
+  server.disconnect(code);
   await until(() => client.status === (code === 4001 ? 'UNAUTHORIZED' : 'DISABLED'));
   assert.equal(clock.jobs.size, code === 4001 ? 0 : 1); assert.equal(server.actions.length, 0);
+});
+
+test('beta.6 permission close 4001 probes state once, reconnects on 200, and stops a consecutive 4001', async t => {
+  const { server, client, clock } = await setup(t), baseline = server.requests.length;
+  server.state.permissions.readDisplayNames = true;
+  server.disconnect(4001);
+  await until(() => server.requests.length > baseline && client.status === 'CONNECTED' && client.state.permissions.readDisplayNames);
+  assert.deepEqual(server.requests.slice(baseline).map(r => [r.path, r.ws]), [
+    ['/external/v1/state', false], ['/external/v1/info', false], ['/external/v1/state', false], ['/external/v1/ws', true]
+  ]);
+  assert.ok(server.requests.slice(baseline).every(r => r.auth));
+  const recovered = server.requests.length;
+  server.disconnect(4001); await until(() => client.status === 'UNAUTHORIZED');
+  clock.advance(60000);
+  assert.equal(server.requests.length, recovered); assert.equal(clock.jobs.size, 0);
+  assert.equal(client.state, undefined); assert.equal(server.actions.length, 0);
+});
+
+test('4001 probe gets 401: stops after exactly one authenticated request', async t => {
+  const { server, client, clock } = await setup(t), baseline = server.requests.length;
+  server.failure = { status: 401, code: 'UNAUTHORIZED' }; server.disconnect(4001);
+  await until(() => client.status === 'UNAUTHORIZED'); clock.advance(60000);
+  assert.deepEqual(server.requests.slice(baseline).map(r => r.path), ['/external/v1/state']);
+  assert.ok(server.requests[baseline].auth); assert.equal(clock.jobs.size, 0); assert.equal(server.actions.length, 0);
+});
+
+test('close 4005 refetches permissions immediately without backoff or action replay', async t => {
+  const { server, client, clock } = await setup(t), baseline = server.requests.length;
+  server.state.permissions.readDisplayNames = true; server.disconnect(4005);
+  await until(() => client.status === 'CONNECTED' && client.state.permissions.readDisplayNames);
+  assert.deepEqual(server.requests.slice(baseline).map(r => r.path), ['/external/v1/info', '/external/v1/state', '/external/v1/ws']);
+  assert.equal(clock.jobs.size, 0); assert.equal(server.actions.length, 0);
+});
+
+test('later beta.6 permissions change can recover again after 30 stable seconds', async t => {
+  const { server, client, clock } = await setup(t);
+  for (const names of [true, false]) {
+    server.state.permissions.readDisplayNames = names; server.disconnect(4001);
+    await until(() => client.status === 'CONNECTED' && client.state.permissions.readDisplayNames === names);
+    clock.advance(30000);
+  }
+  assert.equal(server.actions.length, 0);
+});
+
+test('Bus labels are optional, permission-gated, sanitized and replaced by kind/order labels', async () => {
+  const raw = fixture(), label = '\x00Synthetic\nBus\x7f' + '名'.repeat(90);
+  raw.buses[0].label = label;
+  assert.equal(Object.hasOwn(parseState(raw).buses[0], 'label'), false);
+  raw.permissions.readDisplayNames = true;
+  assert.equal(parseState(raw).buses[0].label, ('SyntheticBus' + '名'.repeat(90)).slice(0, 80));
+  const client = new ParaBusClient(), buttons = new Buttons(client), inspector = new Inspector(buttons, {});
+  try {
+    client.state = parseState(raw);
+    client.state.buses.push({ busId: 'other-bus', kind: 'other', masterDb: 0, mute: false });
+    assert.deepEqual(inspector.snapshot('key').buses.map(b => b.label), [('SyntheticBus' + '名'.repeat(90)).slice(0, 80), 'Bus 2']);
+    delete client.state.buses[0].label;
+    assert.deepEqual(inspector.snapshot('key').buses.map(b => b.label), ['VC Bus 1', 'Bus 2']);
+  } finally { buttons.dispose(); client.stop(); }
 });
 test('slot follows server order/revision; missing user/send never queues operations', async t => {
   const { server, buttons, client, sink } = await setup(t);
@@ -233,10 +293,29 @@ test('readDisplayNames is required and names are projected as text, never saved'
   const inspector = new Inspector(buttons, {});
   assert.ok(!JSON.stringify(inspector.snapshot('key')).includes(unsafe));
   server.state.permissions.readDisplayNames = true; server.state.revision++; server.broadcast(); await until(() => client.state.permissions.readDisplayNames);
-  assert.equal(inspector.snapshot('key').users[0].label, `${userId} · ${unsafe}`);
+  assert.equal(inspector.snapshot('key').users[0].label, `${unsafe} ●`);
   assert.deepEqual(buttonSettings({ target: 'send', discordUserId: userId, busId, displayName: unsafe }), { target: 'send', participant: 'user', discordUserId: userId, busId });
   const js = await readFile('io.github.adilazkahadiko.parabus.sdPlugin/ui/inspector.js', 'utf8');
-  assert.ok(!js.includes('innerHTML')); assert.ok(!js.includes('getGlobalSettings')); assert.ok(!js.includes('fetch(')); assert.ok(js.includes('textContent = u.label'));
+  assert.ok(!js.includes('innerHTML')); assert.ok(!js.includes('getGlobalSettings')); assert.ok(!js.includes('fetch(')); assert.ok(js.includes('new Option(user.label, user.id)'));
+});
+
+test('registered-user labels reflect permission and online status; names never enter either settings store', async t => {
+  const { server, client, buttons, sink } = await setup(t);
+  let stored = { port: server.port, token: server.token }; const saved = [];
+  const inspector = new Inspector(buttons, { async get() { return stored; }, async set(v) { stored = v; }, async setButton(_id, v) { saved.push(v); } });
+  buttons.attach('key', 'mute', {}, sink);
+  client.state.permissions.readDisplayNames = true;
+  client.state.registeredUsers = [
+    { discordUserId: userId, displayName: 'Synthetic Online', online: true },
+    { discordUserId: '100000000000000002', displayName: 'Synthetic Offline', online: false },
+    { discordUserId: '100000000000000003', online: true }
+  ];
+  assert.deepEqual(inspector.snapshot('key').users.map(u => u.label), ['Synthetic Online ●', 'Synthetic Offline', '100000000000000003']);
+  await inspector.message('key', { type: 'button.save', settings: { target: 'send', discordUserId: userId, busId, label: 'Synthetic Bus', displayName: 'Synthetic Online' } });
+  assert.deepEqual(saved, [{ target: 'send', participant: 'user', discordUserId: userId, busId }]);
+  await inspector.message('key', { type: 'connection.save', port: server.port, label: 'Synthetic Bus', displayName: 'Synthetic Online' });
+  assert.deepEqual(Object.keys(stored).sort(), ['port', 'token']);
+  assert.ok(!JSON.stringify(saved).includes('Synthetic'));
 });
 test('configuration fixes host and rejects invalid steps and numeric Discord IDs', () => {
   assert.deepEqual(globalSettings({ port: 0, host: 'example.com', token: 'bad\r\nheader' }), { port: 4175, token: '' });
@@ -343,6 +422,7 @@ for (const source of ['UNAUTHORIZED', 'close 4001', 'CONFIGURE']) {
     if (source === 'UNAUTHORIZED') {
       server.failure = { status: 401, code: 'UNAUTHORIZED' }; client.configure(config); await until(() => client.status === 'UNAUTHORIZED');
     } else if (source === 'close 4001') {
+      server.failure = { status: 401, code: 'UNAUTHORIZED' };
       server.disconnect(4001); await until(() => client.status === 'UNAUTHORIZED');
     } else client.configure({ port: server.port, token: '' });
     const baseline = server.requests.length;

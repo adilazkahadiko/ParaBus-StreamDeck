@@ -1,6 +1,6 @@
 # ParaBus Stream Deck プラグイン
 
-ParaBus 外部操作 API v1 を使う段階3の最初の版です。Windows 10 以降、Stream Deck アプリ 7.1 以降、Stream Deck MK.2 のボタンを対象にします。ライセンスは GPL-3.0-only（[LICENSE](LICENSE)）です。
+ParaBus 外部操作 API v1 を使うプラグインです。0.1.1を準備中です。Windows 10 以降、Stream Deck アプリ 7.1 以降、Stream Deck MK.2 のボタンを対象にします。ライセンスは GPL-3.0-only（[LICENSE](LICENSE)）です。
 
 このプラグインには **ParaBus v0.1.0-beta.6 以降**が必要です。beta.5以前には外部操作APIがありません。本体は[ParaBus beta.6の配布ページ](https://github.com/adilazkahadiko/ParaBus/releases/tag/v0.1.0-beta.6)から入手してください。
 
@@ -40,11 +40,13 @@ Stream Deck の ParaBus カテゴリーからボタンを配置し、対象を�
 
 **参加者の MIX（Send）** は、参加者 → 選択した VC MIX の On/Off とレベルを操作する対象です。参加者は17〜20桁の Discord ユーザー ID（文字列）または1始まりの slot を選択します。slot は全員、または VC Bus 内の現在の並び順です。並び順と `expectedParticipantsRevision` は最新 state から取得し、設定には保存しません。オフラインの参加者や存在しない Send には送信を予約しません。
 
+0.1.1では、固定の参加者を`registeredUsers`のプルダウンから選びます。表示名の読み取りが許可されている場合は名前を表示し、オンラインの人には●を付けます。名前を読めない場合はユーザーIDを表示します。保存済みのIDが一覧にない場合も「ID（見つかりません）」として残します。まだ一覧にない人は「ID を直接入力 / Enter ID」を選び、入力欄へIDを入れてください。
+
 旧 **Participant / 参加者**（`target: channel`）は、API の `channel.fader.*`・`channel.mute.*` の廃止に合わせて削除しました。保存済みの旧対象ボタンは `SETUP` を表示し、操作を送りません。対応する対象を選び直してボタンを保存してください。state の `participants[].faderDb`・`mute` は不要で、旧フィールドが残っていても使用しません。参加者の MIX（Send）は `participants[].sends[].db`・`mute` を使用します。
 
-Bus は state から得た ID を選択します。`external-bus:...` の別名はそのまま保存し、ラベルや Discord の内部 ID から生成しません。ParaBus 側で別名鍵を変更した場合は選択し直します。参加者の MIX（Send）の送信先と slot の範囲は VC Bus を選択します。TX は `profileId` で選択します。`NO_BOT` は表示し、操作を送りません。
+Busとslotの範囲は、許可されたBus名がstateにあれば名前で選べます。名前がなければ種類と並び順から「VC Bus 1」「Bus 2」のように表示します。beta.6はBus名を返さず、beta.7向けのParaBus修正で`readDisplayNames`許可時だけ追加します。値はstateから得たIDのままです。`external-bus:...` の別名はそのまま保存し、ラベルや Discord の内部 ID から生成しません。ParaBus 側で別名鍵を変更した場合は選択し直します。参加者の MIX（Send）の送信先と slot の範囲は VC Bus を選択します。TX は `profileId` で選択します。`NO_BOT` は表示し、操作を送りません。
 
-ボタン設定に保存するものは対象種別、対象 ID、slot の範囲・番号、一回の量だけです。参加者表示名は `readDisplayNames` が許可されたときだけ候補の文字列として表示し、保存しません。
+ボタン設定に保存するものは対象種別、対象 ID、slot の範囲・番号、一回の量だけです。参加者名・Bus名は`readDisplayNames`が許可されたときだけ設定画面に表示し、ボタン設定にも全体設定にも保存しません。保存キーは従来の`target, participant, discordUserId, index, scopeBusId, busId, profileId, stepDb`のままです。
 
 ## 切断・エラー
 
@@ -56,7 +58,9 @@ Bus は state から得た ID を選択します。`external-bus:...` の別名�
 
 `DISABLED`・`STOPPED`・`OFFLINE` などの未接続中にボタンを押すと、`CONNECT` を表示して即座に接続を1回試します。すでに試行中ならその接続試行を共有し、並列に増やしません。**その押下の操作は送信・保留せず、接続できても後から実行しません。** 操作したい場合は接続後に改めて押してください。予期しない非同期エラー（unhandledRejection）で停止した接続も、この押下で復帰できます。
 
-401 / `UNAUTHORIZED` と WS close 4001（取り消し・再発行）では停止し、自動再試行もボタン押下からの再試行も行いません。トークン未設定（`SETUP` / `CONFIGURE`）でも接続を試しません。Property Inspector で有効なトークンを入力して接続設定を保存してください。close code から過去の操作の成否は推測しません。
+HTTP 401 / `UNAUTHORIZED`では停止し、自動再試行もボタン押下からの再試行も行いません。WS close 4001は、beta.6では権限変更にも使われるため、トークン付きHTTPで状態を一度確認します。200なら再接続し、401なら`UNAUTHORIZED`で停止します。再接続直後にも4001が続いた場合は確認を繰り返さず停止します。この確認の制限は30秒の安定接続後、または明示的な接続設定でリセットします。新しいclose 4005（権限変更）は待ち時間なしで新しいinfo/stateを取得し、再接続します。操作の再送は行いません。
+
+トークン未設定（`SETUP` / `CONFIGURE`）でも接続を試しません。Property Inspectorで有効なトークンを入力して接続設定を保存してください。close codeから過去の操作の成否は推測しません。
 
 1回の押下につき新しい UUID の `requestId` を発行します。この版は通信エラーでも操作を自動再送せず、過去の操作キューも作りません。結果不明時は接続後に state と意図を確認して手で押し直します。切断・停止・終了時にミュート解除、フェーダー復元、TX 停止などの音声状態を変える命令は送りません。
 

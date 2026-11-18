@@ -1,5 +1,15 @@
 # Stage 3 verification
 
+## 0.1.1の確認（2026-11-18）
+
+参加者選択を`registeredUsers`の`select`に変更しました。許可された名前とオンライン印、名前を読めない場合のID、保存済みだが見つからないID、ID直接入力をDOM/WSハーネスで確認しました。Bus名は任意の`label`として読み、参加者名と同じ制御文字除去・80文字制限を行います。不許可なら名前を捨て、Busとslot範囲の表示には種類と全Bus一覧の順序による代替名を使います。保存するのは従来のID・設定キーだけで、名前はaction settingsにもglobal settingsにも保存しません。
+
+接続試験はmock ParaBusだけを使います。4001後は認証付き`GET /state`を一度だけ確認し、200なら再接続、401なら停止します。再接続直後に4001が続く場合は追加確認せず停止し、30秒の安定接続後は後日の権限変更を再び回復できます。4005は権限変更として待ち時間なしでinfo/stateを取り直します。どの経路からも操作を再送しません。beta.6互換の4001処理が、下記0.1.0の4001即停止方針を置き換えます。
+
+実アプリは起動・終了・再起動せず、利用者の設定・運用フォルダーを変更しません。Bot接続と音声ストリームの開始も行いません。実機の見た目・操作確認は利用者による確認待ちです。以下の2026-11-16の実機記録は0.1.0のもので、0.1.1の実機確認済みという意味ではありません。
+
+Node 24.22.1での自動試験: **122成功、失敗・skip・cancelledは0**。typecheck / test / validate / packはすべて成功しました。packのファイル一覧は従来と同じ20個で、追加・削除はありません。依存の版・構成は変えず、package-lockの変更もプロジェクト版数だけです。
+
 Automated mock verification was first performed locally on Windows, 2026-11-07 (JST), and rerun for the API update on 2026-11-16. The completed profile-export inspection is recorded below.
 
 ## Contract and scope

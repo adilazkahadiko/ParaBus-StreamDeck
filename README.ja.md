@@ -1,6 +1,8 @@
 # ParaBus Stream Deck プラグイン
 
-ParaBus 外部操作 API v1 を使うプラグインです。0.1.1を準備中です。Windows 10 以降、Stream Deck アプリ 7.1 以降、Stream Deck MK.2 のボタンを対象にします。ライセンスは GPL-3.0-only（[LICENSE](LICENSE)）です。
+ParaBus 外部操作 API v1 を使うプラグインです。0.1.2を準備中です。Windows 10 以降、Stream Deck アプリ 7.1 以降、Stream Deck MK.2 のボタンを対象にします。ライセンスは GPL-3.0-only（[LICENSE](LICENSE)）です。
+
+ボタンのタイトルにはプラグインが名前と状態を表示します（Stream Deck 側のタイトル編集は上書きされます）。名前は半角8文字相当まで（全角と省略記号「…」は2として数える）、mute/fader の既定フォントサイズは9です。emergency とエラーの文言は従来どおりです。
 
 このプラグインには **ParaBus v0.1.0-beta.6 以降**が必要です。beta.5以前には外部操作APIがありません。本体は[ParaBus beta.6の配布ページ](https://github.com/adilazkahadiko/ParaBus/releases/tag/v0.1.0-beta.6)から入手してください。
 

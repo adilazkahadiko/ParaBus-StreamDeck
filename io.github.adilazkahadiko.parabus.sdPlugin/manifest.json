@@ -4,7 +4,7 @@
   "Name": "ParaBus",
   "Author": "adilazkahadiko",
   "Description": "Local buttons for ParaBus external control API v1.",
-  "Version": "0.1.1.0",
+  "Version": "0.1.2.0",
   "SDKVersion": 2,
   "CodePath": "bin/plugin.js",
   "Icon": "imgs/plugin",
@@ -38,7 +38,8 @@
         {
           "Image": "imgs/muted",
           "TitleAlignment": "bottom",
-          "FontSize": 12
+          "FontSize": 9,
+          "FontFamily": "Arial"
         }
       ]
     },
@@ -55,7 +56,8 @@
         {
           "Image": "imgs/fader-up",
           "TitleAlignment": "bottom",
-          "FontSize": 12
+          "FontSize": 9,
+          "FontFamily": "Arial"
         }
       ]
     },
@@ -72,7 +74,8 @@
         {
           "Image": "imgs/fader-down",
           "TitleAlignment": "bottom",
-          "FontSize": 12
+          "FontSize": 9,
+          "FontFamily": "Arial"
         }
       ]
     },

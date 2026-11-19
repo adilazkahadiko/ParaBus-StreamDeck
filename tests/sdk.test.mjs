@@ -9,6 +9,11 @@ import { MockParaBus, until, busId } from './mock-parabus.mjs';
 
 test('real SDK transport: four registered actions, global-only token, clean PI/settings/titles/logs', async t => {
   const server = await new MockParaBus().start();
+  const syntheticNames = ['DemoA', 'MixA'];
+  server.state.permissions.readDisplayNames = true;
+  server.state.registeredUsers[0].displayName = syntheticNames[0];
+  server.state.participants[0].displayName = syntheticNames[0];
+  server.state.buses[0].label = syntheticNames[1];
   const sdk = new WebSocketServer({ port: 0, host: '127.0.0.1' }); await once(sdk, 'listening');
   const root = 'io.github.adilazkahadiko.parabus', cwd = path.resolve(`${root}.sdPlugin`);
   let settings = { port: server.port, token: server.token }, socket, child, exited = false, output = '';
@@ -26,7 +31,7 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
       else received.push(msg);
     });
   });
-  const info = { application: { version: '7.1.0', platform: 'windows', platformVersion: '10', language: 'en' }, plugin: { uuid: root, version: '0.1.1.0' },
+  const info = { application: { version: '7.1.0', platform: 'windows', platformVersion: '10', language: 'en' }, plugin: { uuid: root, version: '0.1.2.0' },
     devices: [{ id: 'mock-mk2', name: 'Mock MK.2', type: 0, size: { columns: 5, rows: 3 } }], devicePixelRatio: 1, colors: {} };
   // Test-only preload injects a real unhandled rejection; production has no test hook.
   const preload = "process.on('message', value => { if (value === 'test-rejection') void Promise.reject(new Error('Synthetic test rejection')); });";
@@ -52,6 +57,8 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
     send('didReceiveSettings', kind, { settings: { target: 'bus', busId, stepDb: 2 } });
     await until(() => received.slice(baseline).some(m => m.event === 'setTitle' && m.context === kind && m.payload.title !== 'SETUP'));
   }
+  await until(() => received.some(m => m.event === 'setTitle' && m.context === 'mute' && m.payload.title === 'MixA\nOPEN'));
+  await until(() => received.some(m => m.event === 'setTitle' && m.context === 'fader-up' && m.payload.title === 'MixA\n-3 dB\n+2'));
   send('propertyInspectorDidAppear', 'mute'); send('sendToPlugin', 'mute', { type: 'hello' });
   await until(() => received.some(m => m.event === 'sendToPropertyInspector' && m.payload.tokenConfigured));
   for (const kind of ['mute', 'fader-up', 'fader-down', 'emergency']) {
@@ -80,15 +87,21 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
   send('sendToPlugin', 'mute', { type: 'connection.save', port: server.port, token: server.token });
   await until(() => received.filter(m => m.event === 'sendToPropertyInspector').length >= 3);
   // Exercise SDK error logging too: raw inbound payloads must never reach a log.
-  socket.send(`{broken:${server.token}`);
+  socket.send(`{broken:${server.token},${syntheticNames.join(',')}`);
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.ok(!JSON.stringify(received).includes(server.token), 'secret must not appear in settings, PI or titles');
   assert.ok(settings.token === server.token, 'secret belongs only in global storage');
   assert.ok(!output.includes(server.token), 'secret must not appear in stdout/stderr');
+  for (const name of syntheticNames) {
+    assert.ok(!output.includes(name), 'display names must not appear in stdout/stderr');
+    assert.ok(!JSON.stringify(settings).includes(name), 'display names must not enter global settings');
+    assert.ok(!JSON.stringify(received.filter(m => m.event === 'setSettings')).includes(name), 'display names must not enter action settings');
+  }
   const logs = await readdir(path.join(cwd, 'logs')).catch(() => []);
   for (const name of logs) {
     const data = await readFile(path.join(cwd, 'logs', name), 'utf8');
     assert.ok(!data.includes(server.token), 'secret must not appear in SDK log files');
+    for (const name of syntheticNames) assert.ok(!data.includes(name), 'display names must not appear in SDK log files');
   }
   assert.ok(!exited, 'plugin remains running');
 });

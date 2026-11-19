@@ -1,4 +1,5 @@
 import { Buttons } from './buttons.ts';
+import { busChoices } from './display-names.ts';
 import { buttonSettings, globalSettings, record, type GlobalSettings } from './settings.ts';
 
 export interface SettingsStore {
@@ -21,15 +22,7 @@ export class Inspector {
       const suffix = group.length > 1 ? ` (${group.filter(id => id.endsWith(tail)).length > 1 ? user.discordUserId : `…${tail}`})` : '';
       return { id: user.discordUserId, label: `${user.displayName}${suffix}${user.online ? ' ●' : ''}` };
     }) ?? [];
-    const busChoices = state?.buses.map((bus, index) => ({ id: bus.busId, kind: bus.kind,
-      label: state.permissions.readDisplayNames && bus.label ? bus.label : `${bus.kind === 'vc' ? 'VC Bus' : 'Bus'} ${index + 1}` })) ?? [];
-    const reserved = new Set(busChoices.map(bus => bus.label)), used = new Set<string>(), counts = new Map<string, number>();
-    const buses = busChoices.map(bus => {
-      let label = bus.label, count = counts.get(label) ?? 1;
-      if (used.has(label)) do { label = `${bus.label} (${++count})`; } while (reserved.has(label) || used.has(label));
-      counts.set(bus.label, count); used.add(label);
-      return { ...bus, label };
-    });
+    const buses = state ? busChoices(state) : [];
     return {
       type: 'status', ...client.connectionSettings, status: client.status, hasState: state !== undefined,
       ...(includeSettings ? { settings: this.buttons.settings(id) } : {}),

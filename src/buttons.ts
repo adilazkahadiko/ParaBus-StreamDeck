@@ -1,4 +1,5 @@
 import { ParaBusClient } from './client.ts';
+import { busChoices, buttonName, participantName } from './display-names.ts';
 import { ApiError, type Code, type ParticipantTarget, type State } from './protocol.ts';
 import { buttonSettings, type ButtonSettings } from './settings.ts';
 
@@ -11,18 +12,19 @@ const errors: Record<Code, string> = {
   RATE_LIMITED: 'RATE\nLIMIT', DISABLED: 'DISABLED', UNAVAILABLE: 'ERROR', INTERNAL: 'ERROR',
   OFFLINE: 'OFFLINE', CONNECTING: 'CONNECT', STOPPED: 'STOPPED', CONFIGURE: 'SETUP', BUSY: 'BUSY', INCOMPATIBLE: 'API\nVERSION'
 };
-type Resolved = { prefix: string; args: Record<string, unknown>; mute?: boolean; db: number; setMute?: (value: boolean) => void };
+type Resolved = { name: string; prefix: string; args: Record<string, unknown>; mute?: boolean; db: number; setMute?: (value: boolean) => void };
 export function resolveTarget(s: ButtonSettings, state: State): Resolved {
   if (s.target === 'bus') {
     const b = state.buses.find(b => b.busId === s.busId);
     if (!b) throw new ApiError(s.busId ? 'NOT_FOUND' : 'CONFIGURE');
-    return { prefix: 'bus', args: { busId: b.busId }, db: b.masterDb, mute: b.mute, setMute: v => { b.mute = v; } };
+    return { name: busChoices(state).find(bus => bus.id === b.busId)!.label,
+      prefix: 'bus', args: { busId: b.busId }, db: b.masterDb, mute: b.mute, setMute: v => { b.mute = v; } };
   }
   if (s.target === 'tx') {
     const b = state.tx.bots.find(b => b.profileId === s.profileId);
     if (!b) throw new ApiError(s.profileId ? 'NOT_FOUND' : 'CONFIGURE');
     if (b.state === 'NO_BOT') throw new ApiError('UNAVAILABLE');
-    return { prefix: 'tx', args: { profileId: b.profileId }, db: b.masterDb };
+    return { name: `TX ${state.tx.bots.indexOf(b) + 1}`, prefix: 'tx', args: { profileId: b.profileId }, db: b.masterDb };
   }
   if (s.target !== 'send') throw new ApiError('CONFIGURE');
   let target: ParticipantTarget, userId: string | undefined;
@@ -40,7 +42,7 @@ export function resolveTarget(s: ButtonSettings, state: State): Resolved {
   const send = p.sends.find(send => send.busId === s.busId);
   if (!s.busId) throw new ApiError('CONFIGURE');
   if (!send || !state.buses.some(b => b.busId === s.busId && b.kind === 'vc')) throw new ApiError('NOT_FOUND');
-  return { prefix: 'send', args: { target, busId: s.busId }, db: send.db, mute: send.mute, setMute: v => { send.mute = v; } };
+  return { name: participantName(state, p.discordUserId), prefix: 'send', args: { target, busId: s.busId }, db: send.db, mute: send.mute, setMute: v => { send.mute = v; } };
 }
 export function view(kind: ButtonKind, settings: ButtonSettings, client: ParaBusClient, error?: Code): View {
   if (kind !== 'emergency' && !settings.target) return { title: errors.CONFIGURE, image: 'imgs/offline.svg' };
@@ -54,10 +56,10 @@ export function view(kind: ButtonKind, settings: ButtonSettings, client: ParaBus
     const target = resolveTarget(settings, client.state);
     if (kind === 'mute') {
       if (target.mute === undefined) throw new ApiError('INVALID');
-      return { title: target.mute ? 'MUTED' : 'OPEN', image: target.mute ? 'imgs/muted.svg' : 'imgs/open.svg' };
+      return { title: `${buttonName(target.name)}\n${target.mute ? 'MUTED' : 'OPEN'}`, image: target.mute ? 'imgs/muted.svg' : 'imgs/open.svg' };
     }
     const db = Object.is(target.db, -0) ? 0 : target.db;
-    return { title: `${db > 0 ? '+' : ''}${Number(db.toFixed(1))} dB\n${kind === 'fader-up' ? '+' : '−'}${settings.stepDb ?? 1}`, image: `imgs/${kind}.svg` };
+    return { title: `${buttonName(target.name)}\n${db > 0 ? '+' : ''}${Number(db.toFixed(1))} dB\n${kind === 'fader-up' ? '+' : '−'}${settings.stepDb ?? 1}`, image: `imgs/${kind}.svg` };
   } catch (e) { return { title: errors[e instanceof ApiError ? e.code : 'UNAVAILABLE'], image: 'imgs/offline.svg' }; }
 }
 type Button = { kind: ButtonKind; settings: ButtonSettings; sink: ButtonSink; pending: boolean; error?: Code; timer?: ReturnType<typeof setTimeout>; last?: string; rendering: Promise<void> };

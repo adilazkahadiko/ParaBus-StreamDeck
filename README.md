@@ -1,6 +1,6 @@
 # ParaBus for Stream Deck
 
-GPL-3.0-only. Version 0.1.1 in preparation for Stream Deck MK.2 buttons on Windows 10+ and Stream Deck 7.1+. Uses the official Node.js SDK, with manifest Node.js **24**. See [日本語](README.ja.md).
+GPL-3.0-only. Version 0.1.2 in preparation for Stream Deck MK.2 buttons on Windows 10+ and Stream Deck 7.1+. Uses the official Node.js SDK, with manifest Node.js **24**. See [日本語](README.ja.md).
 
 Requires **ParaBus v0.1.0-beta.6 or later**. ParaBus beta.5 and earlier do not provide the external control API. Get ParaBus from the [beta.6 download page](https://github.com/adilazkahadiko/ParaBus/releases/tag/v0.1.0-beta.6).
 
@@ -15,6 +15,8 @@ npm.cmd run pack
 ```
 
 Double-click `dist/io.github.adilazkahadiko.parabus.streamDeckPlugin` to install. Add Toggle Mute, Fader Up/Down, or Emergency Mute ON to a key.
+
+The plugin displays the target name and state in button titles (title edits in Stream Deck are overwritten). Names are limited to 8 half-width cells (full-width characters and the truncation mark `…` count as 2), with a default font size of 9 for mute/fader keys; emergency and error text are unchanged.
 
 In ParaBus **SETUP → 接続する機器**, register a device and copy its once-displayed token into the plugin's password field. Enable external control explicitly, including after each ParaBus restart. Stage B permissions are unnecessary; display names are optional. Save the connection, then select the target and save each button. The host is fixed at `127.0.0.1`; the default port is `4175`.
 

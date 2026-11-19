@@ -40,7 +40,7 @@ for (const [label, settings, prefix, args] of selections) {
   test(`mute ${label}: operation, args, latest expectedMute and new UUID per press`, async t => {
     const { server, buttons, client, sink, titles } = await setup(t);
     buttons.attach('key', 'mute', settings, sink); await buttons.press('key');
-    await until(() => titles.includes('MUTED'));
+    await until(() => titles.some(title => title.endsWith('\nMUTED')));
     const first = server.actions[0];
     assert.equal(first.operation, `${prefix}.mute.toggle`); assert.deepEqual(first.args, { ...args, expectedMute: false });
     assert.equal(first.instanceId, client.state.instanceId); assert.match(first.requestId, /^[a-f\d-]{36}$/);
@@ -50,7 +50,7 @@ for (const [label, settings, prefix, args] of selections) {
   test(`STALE ${label}: correct display from current.mute, no resend`, async t => {
     const { server, buttons, client, sink, titles } = await setup(t);
     server.actionFailure = { status: 409, code: 'STALE_REVISION', current: { mute: true } };
-    buttons.attach('key', 'mute', settings, sink); await buttons.press('key'); await until(() => titles.includes('MUTED'));
+    buttons.attach('key', 'mute', settings, sink); await buttons.press('key'); await until(() => titles.some(title => title.endsWith('\nMUTED')));
     assert.equal(resolveTarget(buttonSettings(settings), client.state).mute, true);
     assert.equal(server.actions.length, 1); assert.equal(client.status, 'CONNECTED');
   });
@@ -65,7 +65,7 @@ for (const [label, settings, prefix, args] of faders) {
       await buttons.press('key'); const delta = direction === 'up' ? step : -step;
       assert.equal(server.actions[0].operation, `${prefix}.fader.adjust`); assert.deepEqual(server.actions[0].args, { ...args, deltaDb: delta });
       const expected = start + delta;
-      await until(() => titles.some(t => t.startsWith(`${expected > 0 ? '+' : ''}${expected} dB`)));
+      await until(() => titles.some(t => t.split('\n')[1] === `${expected > 0 ? '+' : ''}${expected} dB`));
       assert.equal(server.actions.length, 1);
     });
   }

@@ -18,6 +18,7 @@ docs/
 src/
   buttons.ts
   client.ts
+  display-names.ts
   inspector.ts
   plugin.ts
   private-logging.ts
@@ -30,7 +31,9 @@ scripts/
   licenses.mjs
   plugin-icon.ps1
 tests/
+  button-titles.test.mjs
   control.test.mjs
+  inspector-labels.test.mjs
   inspector-ui.test.mjs
   mock-parabus.mjs
   sdk.test.mjs
@@ -56,4 +59,4 @@ io.github.adilazkahadiko.parabus.sdPlugin/
     plugin@2x.png
 ```
 
-44 tracked files. The generated pack also includes the compiled plugin, GPL license and complete bundled dependency license texts.
+47 tracked files. The generated pack also includes the compiled plugin, GPL license and complete bundled dependency license texts.

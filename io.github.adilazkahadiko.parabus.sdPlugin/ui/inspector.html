@@ -23,6 +23,8 @@
   <fieldset id="buttonSettings">
     <legend>This button / このボタン</legend>
     <label>Target / 対象 <select id="target"><option value="">Select target / 対象を選択</option><option value="bus">Bus</option><option value="send">Participant MIX (Send) / 参加者の MIX（Send）</option><option value="tx">TX</option></select></label>
+    <label>ボタンの表示名（任意） / Button label (optional) <input id="label" type="text" maxlength="32" aria-describedby="labelHelp"></label>
+    <p id="labelHelp">空なら自動（ユーザー名・Bus名）。Stream Deck のタイトル欄はプラグインが上書きします。<br>Leave blank for automatic names. The plugin overwrites Stream Deck's title field.</p>
     <p>Participant MIX (Send): participant → VC MIX on/off and level.<br>参加者の MIX（Send）: 参加者 → VC MIX の On/Off とレベルを操作します。</p>
     <div id="participantFields">
       <label>Participant / 参加者指定 <select id="participant"><option value="user">Discord user ID / 固定ユーザー</option><option value="slot">Slot / 並び順</option></select></label>

@@ -29,13 +29,29 @@ export function participantName(state: State, userId: string): string {
 // Treat ambiguous/non-half-width characters (including …) conservatively as two.
 export const BUTTON_NAME_WIDTH = 8;
 const width = (char: string): number => /^[\x20-\x7e\uff61-\uffdc]$/u.test(char) ? 1 : 2;
-export function buttonName(name: string): string {
-  const chars = [...clean(name)];
-  if (chars.reduce((sum, char) => sum + width(char), 0) <= BUTTON_NAME_WIDTH) return chars.join('');
+const textWidth = (text: string): number => [...text].reduce((sum, char) => sum + width(char), 0);
+function prefixWithin(text: string, budget: number): string {
   let result = '', used = 0;
-  for (const char of chars) {
-    if (used + width(char) > BUTTON_NAME_WIDTH - width('…')) break;
+  for (const char of text) {
+    if (used + width(char) > budget) break;
     result += char; used += width(char);
   }
-  return `${result}…`;
+  return result;
+}
+export function buttonName(name: string): string {
+  const text = clean(name);
+  if (textWidth(text) <= BUTTON_NAME_WIDTH) return text;
+  const suffix = text.match(/(\(\p{Nd}+\)|（\p{Nd}+）|\p{Nd}+)$/u)?.[0] ?? '';
+  const prefix = suffix ? text.slice(0, -suffix.length).trimEnd() : text;
+  if (suffix && textWidth(prefix + suffix) <= BUTTON_NAME_WIDTH) return prefix + suffix;
+  const budget = BUTTON_NAME_WIDTH - width('…') - textWidth(suffix);
+  if (budget >= 0) return `${prefixWithin(prefix, budget)}…${suffix}`;
+  if (textWidth(suffix) <= BUTTON_NAME_WIDTH) return suffix;
+  // A numeric suffix alone can exceed the key's width. Keep its last digits,
+  // preserving a parenthesis pair when present, rather than overflowing the key.
+  const wrapped = suffix.startsWith('(') || suffix.startsWith('（');
+  const open = wrapped ? suffix[0] : '', close = wrapped ? suffix.at(-1)! : '';
+  const digits = wrapped ? suffix.slice(1, -1) : suffix;
+  const reversed = prefixWithin([...digits].reverse().join(''), BUTTON_NAME_WIDTH - width('…') - textWidth(open + close));
+  return `${open}…${[...reversed].reverse().join('')}${close}`;
 }

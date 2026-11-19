@@ -163,3 +163,37 @@ test('PI saved participant/Bus/scope IDs distinguish no state from connected mis
   assert.deepEqual(socket.messages.at(-1).payload.settings, { target: 'send', participant: 'user', discordUserId: user, busId: bus, stepDb: 2 });
   status(true); check('見つかりません'); socket.onclose(); check('未接続');
 });
+
+for (const kind of ['mute', 'fader-up', 'fader-down']) {
+  test(`PI ${kind}: custom label loads, survives state updates, saves and clears without copying automatic names`, () => {
+    const { element, socket } = ui(kind);
+    const status = settings => socket.onmessage({ data: JSON.stringify({ event: 'sendToPropertyInspector', payload: {
+      type: 'status', status: 'CONNECTED', hasState: true, port: 4175, tokenConfigured: true,
+      users: [{ id: '100000000000000001', label: 'Synthetic Guest' }],
+      buses: [{ id: 'synthetic-vc', kind: 'vc', label: 'Synthetic Mix' }], profiles: [], ...(settings ? { settings } : {})
+    } }) });
+    const settings = { target: 'bus', busId: 'synthetic-vc', label: 'Cue 10' };
+    status(settings);
+    assert.equal(element('buttonSettings').hidden, false);
+    assert.equal(element('label').value, 'Cue 10');
+    element('label').value = '  My Mix 20  '; status();
+    assert.equal(element('label').value, '  My Mix 20  ');
+    element('saveButton').events.click();
+    assert.equal(socket.messages.at(-1).payload.settings.label, 'My Mix 20');
+    assert.ok(!JSON.stringify(socket.messages).includes('Synthetic Mix'));
+    assert.ok(!JSON.stringify(socket.messages).includes('Synthetic Guest'));
+    element('label').value = '   '; element('saveButton').events.click();
+    assert.equal(Object.hasOwn(socket.messages.at(-1).payload.settings, 'label'), false);
+    status({ target: 'bus', busId: 'synthetic-vc' });
+    assert.equal(element('label').value, '');
+    element('saveButton').events.click();
+    assert.equal(Object.hasOwn(socket.messages.at(-1).payload.settings, 'label'), false);
+  });
+}
+
+test('PI label field has the requested help and is hidden with emergency settings', () => {
+  assert.match(html, /ボタンの表示名（任意） \/ Button label \(optional\)/);
+  assert.match(html, /id="label"[^>]*maxlength="32"/);
+  assert.match(html, /空なら自動（ユーザー名・Bus名）。Stream Deck のタイトル欄はプラグインが上書きします。/);
+  assert.equal(ui('emergency').element('buttonSettings').hidden, true);
+});

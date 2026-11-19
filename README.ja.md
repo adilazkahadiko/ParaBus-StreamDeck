@@ -1,8 +1,10 @@
 # ParaBus Stream Deck プラグイン
 
-ParaBus 外部操作 API v1 を使うプラグインです。0.1.2を準備中です。Windows 10 以降、Stream Deck アプリ 7.1 以降、Stream Deck MK.2 のボタンを対象にします。ライセンスは GPL-3.0-only（[LICENSE](LICENSE)）です。
+ParaBus 外部操作 API v1 を使うプラグインです。0.1.3を準備中です。Windows 10 以降、Stream Deck アプリ 7.1 以降、Stream Deck MK.2 のボタンを対象にします。ライセンスは GPL-3.0-only（[LICENSE](LICENSE)）です。
 
 ボタンのタイトルにはプラグインが名前と状態を表示します（Stream Deck 側のタイトル編集は上書きされます）。名前は半角8文字相当まで（全角と省略記号「…」は2として数える）、mute/fader の既定フォントサイズは9です。emergency とエラーの文言は従来どおりです。
+
+0.1.3では末尾の番号・括弧つき番号を残します。`VC Bus 9` はそのまま、`VC Bus 10` は `VC Bus10`、`VC Bus 20` は `VC Bus20` になります。まず番号直前の空白を取り除き、まだ長ければ `Long Mix 10` → `Long…10`、`配信用ミックス 10` → `配信…10`、`配信用ミックス (2)` → `配…(2)` のように省略します。番号のない名前は従来どおり末尾を `…` にします。番号だけで上限を超える場合は幅8を優先し、番号の後ろ側を残します。
 
 このプラグインには **ParaBus v0.1.0-beta.6 以降**が必要です。beta.5以前には外部操作APIがありません。本体は[ParaBus beta.6の配布ページ](https://github.com/adilazkahadiko/ParaBus/releases/tag/v0.1.0-beta.6)から入手してください。
 
@@ -34,6 +36,10 @@ npm.cmd run pack
 
 Stream Deck の ParaBus カテゴリーからボタンを配置し、対象を設定して **Save button / ボタンを保存** を押します。
 
+好きな名前を使うには、対象選択の近くの **ボタンの表示名（任意） / Button label (optional)** に入力して保存してください。空なら自動（ユーザー名・Bus名、TXは番号）です。手入力した値だけをボタン設定の `label` として保存し、改行・制御文字と前後の空白を取り除いてUnicode文字32個までに制限します。表示時は自動名と同じ半角8文字相当の省略規則を使います。空欄に戻して保存すると自動名に戻り、`label` のない古い設定もそのまま動きます。
+
+Stream Deck のタイトル欄はプラグインが上書きしますが、文字の大きさは Stream Deck の設定で変更できます。前から置いてあるボタンの文字が大きすぎる場合は、置き直すか文字の大きさを変えてください。
+
 | ボタン | 対象と動作 |
 | --- | --- |
 | Toggle Mute | Bus・参加者の MIX（Send）のミュートを反転。現在の `mute` を `expectedMute` に使用し、`STALE_REVISION` の `current.mute` で表示を訂正。自動再送しません |
@@ -49,7 +55,7 @@ Stream Deck の ParaBus カテゴリーからボタンを配置し、対象を�
 
 Busとslotの範囲は、許可されたBus名がstateにあれば名前で選べます。名前がなければ種類と並び順から「VC Bus 1」「Bus 2」のように表示します。beta.6はBus名を返さず、beta.7向けのParaBus修正で`readDisplayNames`許可時だけ追加します。値はstateから得たIDのままです。`external-bus:...` の別名はそのまま保存し、ラベルや Discord の内部 ID から生成しません。ParaBus 側で別名鍵を変更した場合は選択し直します。参加者の MIX（Send）の送信先と slot の範囲は VC Bus を選択します。TX は `profileId` で選択します。`NO_BOT` は表示し、操作を送りません。
 
-ボタン設定に保存するものは対象種別、対象 ID、slot の範囲・番号、一回の量だけです。参加者名・Bus名は`readDisplayNames`が許可されたときだけ設定画面に表示し、ボタン設定にも全体設定にも保存しません。保存キーは従来の`target, participant, discordUserId, index, scopeBusId, busId, profileId, stepDb`のままです。
+ボタン設定に保存するものは対象種別、対象 ID、slot の範囲・番号、一回の量、および任意の手入力表示名です。Discord／API由来の参加者名・Bus名は`readDisplayNames`が許可されたときだけ表示に使い、ボタン設定にも全体設定にも保存しません。保存キーは従来の`target, participant, discordUserId, index, scopeBusId, busId, profileId, stepDb`に、手入力した場合だけ`label`が加わります。
 
 ## 切断・エラー
 

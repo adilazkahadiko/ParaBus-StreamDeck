@@ -36,8 +36,8 @@ function updateFields() {
   fill('profileId', choices.profiles.map(id => ({ id })));
 }
 function applySettings(s) {
-  for (const id of ['target', 'participant', 'discordUserId', 'index', 'stepDb']) {
-    element(id).value = s[id] ?? ({ target: '', participant: 'user', discordUserId: '', index: 1, stepDb: 1 })[id];
+  for (const id of ['target', 'participant', 'discordUserId', 'index', 'stepDb', 'label']) {
+    element(id).value = s[id] ?? ({ target: '', participant: 'user', discordUserId: '', index: 1, stepDb: 1, label: '' })[id];
   }
   element('userSelect').value = s.discordUserId ?? '';
   // Insert saved IDs before selecting: native <select> ignores values absent from its options.
@@ -89,6 +89,8 @@ element('connect').addEventListener('click', () => send({ type: 'connection.conn
 element('clear').addEventListener('click', () => { element('token').value = ''; send({ type: 'connection.clear' }); });
 element('saveButton').addEventListener('click', () => {
   const target = element('target').value, settings = { target };
+  const label = element('label').value.trim();
+  if (label) settings.label = label;
   if (!['bus', 'send', 'tx'].includes(target)) { element('status').textContent = 'Select target / 対象を選択'; return; }
   if (target === 'send') {
     settings.participant = element('participant').value;

@@ -56,10 +56,10 @@ export function view(kind: ButtonKind, settings: ButtonSettings, client: ParaBus
     const target = resolveTarget(settings, client.state);
     if (kind === 'mute') {
       if (target.mute === undefined) throw new ApiError('INVALID');
-      return { title: `${buttonName(target.name)}\n${target.mute ? 'MUTED' : 'OPEN'}`, image: target.mute ? 'imgs/muted.svg' : 'imgs/open.svg' };
+      return { title: `${buttonName(settings.label || target.name)}\n${target.mute ? 'MUTED' : 'OPEN'}`, image: target.mute ? 'imgs/muted.svg' : 'imgs/open.svg' };
     }
     const db = Object.is(target.db, -0) ? 0 : target.db;
-    return { title: `${buttonName(target.name)}\n${db > 0 ? '+' : ''}${Number(db.toFixed(1))} dB\n${kind === 'fader-up' ? '+' : '−'}${settings.stepDb ?? 1}`, image: `imgs/${kind}.svg` };
+    return { title: `${buttonName(settings.label || target.name)}\n${db > 0 ? '+' : ''}${Number(db.toFixed(1))} dB\n${kind === 'fader-up' ? '+' : '−'}${settings.stepDb ?? 1}`, image: `imgs/${kind}.svg` };
   } catch (e) { return { title: errors[e instanceof ApiError ? e.code : 'UNAVAILABLE'], image: 'imgs/offline.svg' }; }
 }
 type Button = { kind: ButtonKind; settings: ButtonSettings; sink: ButtonSink; pending: boolean; error?: Code; timer?: ReturnType<typeof setTimeout>; last?: string; rendering: Promise<void> };

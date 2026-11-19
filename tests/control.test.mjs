@@ -372,7 +372,7 @@ test('registered-user labels reflect permission and online status; names never e
     { discordUserId: '100000000000000003', online: true }
   ];
   assert.deepEqual(inspector.snapshot('key').users.map(u => u.label), ['Synthetic Online ●', 'Synthetic Offline', '100000000000000003']);
-  await inspector.message('key', { type: 'button.save', settings: { target: 'send', discordUserId: userId, busId, label: 'Synthetic Bus', displayName: 'Synthetic Online' } });
+  await inspector.message('key', { type: 'button.save', settings: { target: 'send', discordUserId: userId, busId, displayName: 'Synthetic Online' } });
   assert.deepEqual(saved, [{ target: 'send', participant: 'user', discordUserId: userId, busId }]);
   await inspector.message('key', { type: 'connection.save', port: server.port, label: 'Synthetic Bus', displayName: 'Synthetic Online' });
   assert.deepEqual(Object.keys(stored).sort(), ['port', 'token']);

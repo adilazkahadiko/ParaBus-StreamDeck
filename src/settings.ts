@@ -7,13 +7,14 @@ export type ButtonSettings = {
   busId?: string;
   profileId?: string;
   stepDb?: number;
+  label?: string;
 };
 export type GlobalSettings = { port: number; token: string };
 export const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const id = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 256 && !/[\x00-\x1f\x7f]/.test(v);
 
-/** An allowlist, never a spread of incoming settings. No names, tokens or revisions. */
+/** An allowlist: only user-entered labels, never API names, tokens or revisions. */
 export function buttonSettings(value: unknown): ButtonSettings {
   const v = record(value), s: ButtonSettings = {};
   if (['bus', 'send', 'tx'].includes(String(v.target))) s.target = v.target as ButtonSettings['target'];
@@ -30,6 +31,10 @@ export function buttonSettings(value: unknown): ButtonSettings {
   if ((s.target === 'bus' || s.target === 'send') && id(v.busId)) s.busId = v.busId;
   if (s.target === 'tx' && typeof v.profileId === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(v.profileId)) s.profileId = v.profileId;
   if (typeof v.stepDb === 'number' && Number.isFinite(v.stepDb) && v.stepDb > 0 && v.stepDb <= 6) s.stepDb = v.stepDb;
+  if (typeof v.label === 'string') {
+    const label = [...v.label.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '').trim()].slice(0, 32).join('').trimEnd();
+    if (label) s.label = label;
+  }
   return s;
 }
 export function globalSettings(value: unknown): GlobalSettings {

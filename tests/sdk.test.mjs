@@ -31,7 +31,7 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
       else received.push(msg);
     });
   });
-  const info = { application: { version: '7.1.0', platform: 'windows', platformVersion: '10', language: 'en' }, plugin: { uuid: root, version: '0.1.2.0' },
+  const info = { application: { version: '7.1.0', platform: 'windows', platformVersion: '10', language: 'en' }, plugin: { uuid: root, version: '0.1.3.0' },
     devices: [{ id: 'mock-mk2', name: 'Mock MK.2', type: 0, size: { columns: 5, rows: 3 } }], devicePixelRatio: 1, colors: {} };
   // Test-only preload injects a real unhandled rejection; production has no test hook.
   const preload = "process.on('message', value => { if (value === 'test-rejection') void Promise.reject(new Error('Synthetic test rejection')); });";
@@ -54,11 +54,15 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
   assert.equal(server.actions.length, 0, 'legacy buttons never send actions');
   for (const kind of ['mute', 'fader-up', 'fader-down']) {
     const baseline = received.length;
-    send('didReceiveSettings', kind, { settings: { target: 'bus', busId, stepDb: 2 } });
+    send('didReceiveSettings', kind, { settings: { target: 'bus', busId, stepDb: 2,
+      ...(kind === 'fader-down' ? { label: ' User Cue20\n ' } : {}) } });
     await until(() => received.slice(baseline).some(m => m.event === 'setTitle' && m.context === kind && m.payload.title !== 'SETUP'));
   }
   await until(() => received.some(m => m.event === 'setTitle' && m.context === 'mute' && m.payload.title === 'MixA\nOPEN'));
   await until(() => received.some(m => m.event === 'setTitle' && m.context === 'fader-up' && m.payload.title === 'MixA\n-3 dB\n+2'));
+  await until(() => received.some(m => m.event === 'setTitle' && m.context === 'fader-down' && m.payload.title === 'User…20\n-3 dB\n−2'));
+  assert.deepEqual(received.find(m => m.event === 'setSettings' && m.context === 'fader-down' && m.payload.label).payload,
+    { target: 'bus', busId, stepDb: 2, label: 'User Cue20' });
   send('propertyInspectorDidAppear', 'mute'); send('sendToPlugin', 'mute', { type: 'hello' });
   await until(() => received.some(m => m.event === 'sendToPropertyInspector' && m.payload.tokenConfigured));
   for (const kind of ['mute', 'fader-up', 'fader-down', 'emergency']) {
@@ -92,6 +96,7 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
   assert.ok(!JSON.stringify(received).includes(server.token), 'secret must not appear in settings, PI or titles');
   assert.ok(settings.token === server.token, 'secret belongs only in global storage');
   assert.ok(!output.includes(server.token), 'secret must not appear in stdout/stderr');
+  assert.ok(!output.includes('User Cue20'), 'custom labels must not appear in stdout/stderr');
   for (const name of syntheticNames) {
     assert.ok(!output.includes(name), 'display names must not appear in stdout/stderr');
     assert.ok(!JSON.stringify(settings).includes(name), 'display names must not enter global settings');
@@ -101,6 +106,7 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
   for (const name of logs) {
     const data = await readFile(path.join(cwd, 'logs', name), 'utf8');
     assert.ok(!data.includes(server.token), 'secret must not appear in SDK log files');
+    assert.ok(!data.includes('User Cue20'), 'custom labels must not appear in SDK log files');
     for (const name of syntheticNames) assert.ok(!data.includes(name), 'display names must not appear in SDK log files');
   }
   assert.ok(!exited, 'plugin remains running');

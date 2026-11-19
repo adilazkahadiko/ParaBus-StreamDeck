@@ -1,6 +1,6 @@
 # ParaBus for Stream Deck
 
-GPL-3.0-only. Version 0.1.2 in preparation for Stream Deck MK.2 buttons on Windows 10+ and Stream Deck 7.1+. Uses the official Node.js SDK, with manifest Node.js **24**. See [日本語](README.ja.md).
+GPL-3.0-only. Version 0.1.3 in preparation for Stream Deck MK.2 buttons on Windows 10+ and Stream Deck 7.1+. Uses the official Node.js SDK, with manifest Node.js **24**. See [日本語](README.ja.md).
 
 Requires **ParaBus v0.1.0-beta.6 or later**. ParaBus beta.5 and earlier do not provide the external control API. Get ParaBus from the [beta.6 download page](https://github.com/adilazkahadiko/ParaBus/releases/tag/v0.1.0-beta.6).
 
@@ -18,6 +18,10 @@ Double-click `dist/io.github.adilazkahadiko.parabus.streamDeckPlugin` to install
 
 The plugin displays the target name and state in button titles (title edits in Stream Deck are overwritten). Names are limited to 8 half-width cells (full-width characters and the truncation mark `…` count as 2), with a default font size of 9 for mute/fader keys; emergency and error text are unchanged.
 
+Version 0.1.3 preserves trailing numbers and parenthesized numbers: `VC Bus 9` stays unchanged, `VC Bus 10` becomes `VC Bus10`, and `Long Mix 10` becomes `Long…10`. When necessary, whitespace before the number is removed first; longer names use a prefix, `…`, and the number. Names without a numeric suffix keep the usual end truncation. If the suffix alone exceeds the limit, width 8 takes priority and its last digits are retained.
+
+Use **ボタンの表示名（任意） / Button label (optional)** near Target to enter your own name, then save the button. Leave it blank for the automatic user/Bus name (or TX number). Only this manually entered `label` is saved in action settings; control characters and surrounding whitespace are removed and it is limited to 32 Unicode characters. The same width-8 display rule applies. Clearing it restores automatic names; older settings without `label` continue to work. Stream Deck's title field is still overwritten; font size can be changed in Stream Deck. If an older button retains oversized text, re-add it or adjust its font size.
+
 In ParaBus **SETUP → 接続する機器**, register a device and copy its once-displayed token into the plugin's password field. Enable external control explicitly, including after each ParaBus restart. Stage B permissions are unnecessary; display names are optional. Save the connection, then select the target and save each button. The host is fixed at `127.0.0.1`; the default port is `4175`.
 
 Tokens are stored **only in plugin global settings**, never action settings. The inspector sends new input to the plugin and only receives a configured/not-configured flag. Global settings are managed by Stream Deck; this does not promise encryption. Protect local app data, revoke tokens when needed, and keep tokens out of source control.
@@ -26,7 +30,7 @@ Tokens are stored **only in plugin global settings**, never action settings. The
 
 Targets are **Bus**, **Participant MIX (Send) / 参加者の MIX（Send）**, and **TX** (fader only). Participant MIX (Send) controls the on/off state and level from a participant to a selected VC MIX. Select the participant by a 17–20 digit Discord user ID or a 1-based slot in the current all-participant or VC Bus order, and select the destination VC Bus. The current slot order and `participantsRevision` come from state and are never saved in button settings.
 
-Version 0.1.1 uses a participant dropdown from `registeredUsers`: permitted names appear with a ● for online users; otherwise the user ID is shown. Missing saved IDs remain selectable. Choose **ID を直接入力 / Enter ID** for an unlisted user. Bus and slot-scope dropdowns use permitted Bus labels when provided by ParaBus; otherwise they show kind/order labels such as `VC Bus 1` or `Bus 2`. ParaBus beta.6 provides no Bus labels; the ParaBus change prepared for beta.7 adds them under the same `readDisplayNames` permission. Names are display-only and are never saved in action or global settings. IDs and the existing settings keys remain unchanged.
+Version 0.1.1 uses a participant dropdown from `registeredUsers`: permitted names appear with a ● for online users; otherwise the user ID is shown. Missing saved IDs remain selectable. Choose **ID を直接入力 / Enter ID** for an unlisted user. Bus and slot-scope dropdowns use permitted Bus labels when provided by ParaBus; otherwise they show kind/order labels such as `VC Bus 1` or `Bus 2`. ParaBus beta.6 provides no Bus labels; beta.7 adds them under the same `readDisplayNames` permission. API-provided names are display-only and are never saved in action or global settings. IDs and existing settings keys are unchanged; v0.1.3 adds only the optional user-entered `label` key.
 Duplicate participant names (ignoring surrounding whitespace and case) show `Name (…1234)` before the online mark, or the full ID if those last four digits collide; duplicate Bus labels receive `(2)`, `(3)`, etc., for display only.
 
 Mute supports Bus and Participant MIX (Send), using current state and `expectedMute`; a stale reply corrects the display without retrying. Each fader press sends one relative adjustment (default 1 dB, configurable up to 6 dB). Emergency only enables mute; release it in ParaBus. No action is retried or queued automatically.

@@ -83,12 +83,12 @@ test('disambiguation changes only PI strings, never action/global settings or so
   buttons.attach('key', 'mute', {}, { async setTitle() {}, async setImage() {} });
   const settings = { target: 'send', participant: 'user', discordUserId: id, busId: options.buses[1].id, stepDb: 2 };
   await inspector.message('key', { type: 'button.save', settings: { ...settings,
-    displayName: options.users[0].label, label: options.buses[1].label, users: options.users, buses: options.buses } });
+    displayName: options.users[0].label, users: options.users, buses: options.buses } });
   assert.deepEqual(saved, [{ id: 'key', value: settings }]);
   assert.deepEqual(buttons.settings('key'), settings);
   assert.deepEqual(client.state, stateBefore);
   const slot = { target: 'send', participant: 'slot', index: 2, scopeBusId: options.buses[1].id, busId: options.buses[0].id, stepDb: 1 };
-  await inspector.message('key', { type: 'button.save', settings: { ...slot, label: options.buses[1].label } });
+  await inspector.message('key', { type: 'button.save', settings: slot });
   assert.deepEqual(saved.at(-1).value, slot);
   await inspector.message('key', { type: 'connection.save', port: 4175, displayName: options.users[0].label,
     label: options.buses[1].label, users: options.users, buses: options.buses });

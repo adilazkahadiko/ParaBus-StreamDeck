@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { ParaBusClient, Buttons, Inspector, parseState, view, buttonName, BUTTON_NAME_WIDTH } from '../dist/test-api.mjs';
+import { ParaBusClient, Buttons, Inspector, parseState, view, buttonName, buttonSettings, globalSettings, BUTTON_NAME_WIDTH } from '../dist/test-api.mjs';
 import { fixture, MockParaBus, until, userId, busId } from './mock-parabus.mjs';
 
 // Every name, ID and state here is synthetic. No real app or device is used.
@@ -98,6 +98,79 @@ test('full-width names reserve space for ellipsis and obey the adjusted width li
   assert.equal(title(s), '試験参…\nOPEN');
 });
 
+test('numeric suffixes stay distinguishable within eight cells, compacting only when needed', () => {
+  for (const [input, expected] of [
+    ['VC Bus 9', 'VC Bus 9'], ['VC Bus 10', 'VC Bus10'], ['VC Bus 20', 'VC Bus20'],
+    ['VC Bus   10', 'VC Bus10'], ['Long Mix 10', 'Long…10'], ['Long Mix (2)', 'Lon…(2)'],
+    ['配信用ミックス 10', '配信…10'], ['配信用ミックス (2)', '配…(2)'],
+    ['Long Mix', 'Long Mix'], ['Long Mixer', 'Long M…'], ['試験参加者の仮名', '試験参…'],
+    ['配信用 １０', '配…１０'], ['Long Mix 1234567', '1234567'],
+    ['Long Mix 123456789', '…456789'], ['Long Mix (123456789)', '(…6789)']
+  ]) assert.equal(buttonName(input), expected);
+});
+
+test('automatic fallback titles for Bus 9, 10 and 20 retain their numbers', () => {
+  const s = state(); s.permissions.readDisplayNames = false;
+  s.buses = Array.from({ length: 20 }, (_, i) => ({ busId: `synthetic-bus-${i + 1}`, kind: 'vc', masterDb: 0, mute: false }));
+  for (const [n, expected] of [[9, 'VC Bus 9'], [10, 'VC Bus10'], [20, 'VC Bus20']]) {
+    assert.equal(title(s, { target: 'bus', busId: s.buses[n - 1].busId }), `${expected}\nOPEN`);
+  }
+});
+
+test('label validation removes controls, trims, caps Unicode characters at 32 and omits empty or non-string values', () => {
+  assert.deepEqual(buttonSettings({ label: ' \x00D\te\nm\ro\x7f\u0085\u2028\u2029\u202e\u200b 10 ' }), { label: 'Demo 10' });
+  assert.equal(buttonSettings({ label: 'A'.repeat(40) }).label, 'A'.repeat(32));
+  assert.equal(buttonSettings({ label: '仮'.repeat(40) }).label, '仮'.repeat(32));
+  assert.equal(buttonSettings({ label: '😀'.repeat(40) }).label, '😀'.repeat(32));
+  assert.equal(buttonSettings({ label: 'A'.repeat(31) + '  B' }).label, 'A'.repeat(31));
+  for (const label of ['', '   ', '\r\n\t\x00\u0085\u202e', undefined, null, 123, {}, []]) {
+    assert.deepEqual(buttonSettings({ label }), {});
+  }
+  assert.deepEqual(globalSettings({ label: 'My Cue' }), { port: 4175, token: '' });
+});
+
+test('custom label replaces only the first title line for every supported target and kind', () => {
+  const s = state();
+  for (const settings of [send, bus, { target: 'tx', profileId: s.tx.bots[0].profileId }]) {
+    for (const kind of settings.target === 'tx' ? ['fader-up', 'fader-down'] : ['mute', 'fader-up', 'fader-down']) {
+      const automatic = view(kind, settings, connected(s));
+      const custom = view(kind, buttonSettings({ ...settings, label: 'Long Mix 10' }), connected(s));
+      assert.deepEqual(custom, { ...automatic, title: ['Long…10', ...automatic.title.split('\n').slice(1)].join('\n') });
+    }
+  }
+  assert.equal(title(s, buttonSettings({ ...send, label: '' })), 'DemoA\nOPEN');
+  assert.equal(title(s, { ...send }), 'DemoA\nOPEN'); // Old settings have no label.
+  const custom = { ...send, label: 'My Cue' };
+  assert.equal(view('mute', custom, { status: 'OFFLINE' }).title, 'OFFLINE');
+  assert.equal(view('mute', custom, connected(s), 'UNAUTHORIZED').title, '401\nAUTH');
+  assert.equal(title(s, { ...custom, discordUserId: '100000000000009999' }), 'NO TARGET');
+  assert.equal(view('mute', { label: 'My Cue' }, connected(s)).title, 'SETUP');
+  assert.equal(view('emergency', custom, connected(s)).title, 'EMERGENCY\nREADY');
+});
+
+test('inspector saves the user label, never copies API names, and clearing restores automatic titles', async t => {
+  const client = new ParaBusClient(), buttons = new Buttons(client), saved = [], titles = [];
+  t.after(() => { buttons.dispose(); client.stop(); });
+  client.state = state(); client.status = 'CONNECTED';
+  const inspector = new Inspector(buttons, { async setButton(id, value) { saved.push({ id, value }); } });
+  buttons.attach('custom', 'mute', send, { async setImage() {}, async setTitle(value) { titles.push(value); } });
+  const options = inspector.snapshot('custom');
+  const stateBefore = structuredClone(client.state);
+  await inspector.message('custom', { type: 'button.save', settings: { ...send, label: '  My Cue  ',
+    displayName: options.users[0].label, users: options.users, buses: options.buses } });
+  await until(() => titles.at(-1) === 'My Cue\nOPEN');
+  assert.deepEqual(saved, [{ id: 'custom', value: { ...send, label: 'My Cue' } }]);
+  assert.deepEqual(client.state, stateBefore);
+  assert.ok(!JSON.stringify(saved).includes('DemoA'));
+  assert.ok(!JSON.stringify(saved).includes('MixA'));
+  assert.equal(inspector.snapshot('custom', true).settings.label, 'My Cue');
+  await inspector.message('custom', { type: 'button.save', settings: { ...send, label: ' \n ' } });
+  await until(() => titles.at(-1) === 'DemoA\nOPEN');
+  assert.deepEqual(saved.at(-1), { id: 'custom', value: send });
+  buttons.attach('emergency', 'emergency', { label: 'My Cue' }, { async setImage() {}, async setTitle() {} });
+  assert.deepEqual(buttons.settings('emergency'), {});
+});
+
 test('line breaks, C0/C1, formatting controls and Unicode line separators are removed', () => {
   const unsafe = '\x00D\te\nm\ro\x7f\u0085\u2028\u2029\u202e\u200bA';
   assert.equal(buttonName(unsafe), 'DemoA');
@@ -174,7 +247,7 @@ test('next state updates rename user/Bus, reassign slots and revoke names withou
 
 test('manifest keeps emergency defaults while sizing mute/fader titles for 72px keys', async () => {
   const manifest = JSON.parse(await readFile('io.github.adilazkahadiko.parabus.sdPlugin/manifest.json', 'utf8'));
-  assert.equal(manifest.Version, '0.1.2.0');
+  assert.equal(manifest.Version, '0.1.3.0');
   for (const action of manifest.Actions) {
     assert.equal(action.States[0].TitleAlignment, 'bottom');
     assert.equal(action.States[0].FontSize, action.UUID.endsWith('.emergency') ? 11 : 9);

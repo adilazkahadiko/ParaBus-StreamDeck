@@ -10,10 +10,11 @@ export type State = {
   registeredUsers: { discordUserId: string; online: boolean; displayName?: string }[];
   participantOrders: { scope: Scope; users: string[] }[];
   buses: { busId: string; kind: string; label?: string; masterDb: number; mute: boolean }[];
+  selectors: { selectorId: string; name: string; mode: 'SWITCH' | 'ADDITIVE'; fadeMs: number; sourceBusIds: string[]; selectedBusIds: string[]; primaryBusId: string | null; emergencyMuted: boolean }[];
   tx: { bots: { profileId: string; masterDb: number; state: string }[] };
   permissions: { readDisplayNames: boolean };
 };
-export const codes = ['INVALID', 'UNAUTHORIZED', 'HOST_FORBIDDEN', 'ORIGIN_FORBIDDEN', 'TIER_FORBIDDEN', 'NOT_FOUND', 'LOCKED', 'STALE_REVISION', 'RATE_LIMITED', 'DISABLED', 'UNAVAILABLE', 'INTERNAL', 'OFFLINE', 'CONNECTING', 'STOPPED', 'CONFIGURE', 'BUSY', 'INCOMPATIBLE'] as const;
+export const codes = ['INVALID', 'UNAUTHORIZED', 'HOST_FORBIDDEN', 'ORIGIN_FORBIDDEN', 'TIER_FORBIDDEN', 'NOT_FOUND', 'LOCKED', 'STALE_REVISION', 'RATE_LIMITED', 'DISABLED', 'UNAVAILABLE', 'INTERNAL', 'OFFLINE', 'CONNECTING', 'STOPPED', 'CONFIGURE', 'BUSY', 'INCOMPATIBLE', 'CERTIFICATE'] as const;
 export type Code = typeof codes[number];
 export function safeCode(value: unknown): Code { return codes.includes(value as Code) ? value as Code : 'UNAVAILABLE'; }
 export class ApiError extends Error {
@@ -31,21 +32,28 @@ function scope(v: unknown): Scope { const s = record(v); if (s.kind === 'all') r
 /** Project just what we need. Never forward raw server objects to the PI or logs. */
 export function parseState(value: unknown): State {
   const v = record(value);
-  if (!uuid(v.instanceId) || !rev(v.revision) || !rev(v.participantsRevision)) throw new ApiError('UNAVAILABLE');
+  if (!uuid(v.instanceId) || !rev(v.revision) || v.participantsRevision !== undefined && !rev(v.participantsRevision)) throw new ApiError('UNAVAILABLE');
   const names = record(v.permissions).readDisplayNames === true;
   const name = (v: Record<string, unknown>) => names && displayName(v.displayName) ? { displayName: displayName(v.displayName) } : {};
   return {
-    instanceId: v.instanceId, revision: v.revision, participantsRevision: v.participantsRevision,
+    instanceId: v.instanceId, revision: v.revision, participantsRevision: v.participantsRevision as number ?? 1,
     enabled: bool(v.enabled), emergencyMuted: bool(v.emergencyMuted), permissions: { readDisplayNames: names },
-    participants: array(v.participants).map(x => { const p = record(x); return {
+    participants: array(v.participants ?? []).map(x => { const p = record(x); return {
       discordUserId: text(p.discordUserId), ...name(p),
-      sends: array(p.sends).map(x => { const s = record(x); return { busId: text(s.busId), db: db(s.db), mute: bool(s.mute) }; })
+      sends: array(p.sends ?? []).map(x => { const s = record(x); return { busId: text(s.busId), db: db(s.db), mute: bool(s.mute) }; })
     }; }),
-    registeredUsers: array(v.registeredUsers).map(x => { const p = record(x); return { discordUserId: text(p.discordUserId), online: bool(p.online), ...name(p) }; }),
-    participantOrders: array(v.participantOrders).map(x => { const p = record(x); return { scope: scope(p.scope), users: array(p.users).map(text) }; }),
+    registeredUsers: array(v.registeredUsers ?? []).map(x => { const p = record(x); return { discordUserId: text(p.discordUserId), online: bool(p.online), ...name(p) }; }),
+    participantOrders: array(v.participantOrders ?? []).map(x => { const p = record(x); return { scope: scope(p.scope), users: array(p.users).map(text) }; }),
     buses: array(v.buses).map(x => { const b = record(x), label = names ? displayName(b.label) : undefined; return {
-      busId: text(b.busId), kind: text(b.kind), ...(label ? { label } : {}), masterDb: db(b.masterDb), mute: bool(b.mute)
+      busId: text(b.busId), kind: b.kind === undefined ? 'vc' : text(b.kind), ...(label ? { label } : {}), masterDb: b.masterDb === undefined ? 0 : db(b.masterDb), mute: b.mute === undefined ? false : bool(b.mute)
     }; }),
-    tx: { bots: array(record(v.tx).bots).map(x => { const b = record(x); return { profileId: text(b.profileId), masterDb: db(b.masterDb), state: text(b.state) }; }) }
+    tx: { bots: array(record(v.tx).bots ?? []).map(x => { const b = record(x); return { profileId: text(b.profileId), masterDb: b.masterDb === undefined ? 0 : db(b.masterDb), state: text(b.state) }; }) },
+    selectors: array(v.selectors ?? []).map(x => {
+      const s = record(x);
+      if (!['SWITCH', 'ADDITIVE'].includes(String(s.mode)) || !Number.isInteger(s.fadeMs) || Number(s.fadeMs) < 0 || Number(s.fadeMs) > 2000) throw new ApiError('UNAVAILABLE');
+      const sourceBusIds = array(s.sourceBusIds).map(text), selectedBusIds = array(s.selectedBusIds).map(text);
+      if (selectedBusIds.some(id => !sourceBusIds.includes(id)) || s.primaryBusId !== null && !selectedBusIds.includes(String(s.primaryBusId))) throw new ApiError('UNAVAILABLE');
+      return { selectorId: text(s.selectorId), name: displayName(s.name) ?? 'Selector', mode: s.mode as 'SWITCH' | 'ADDITIVE', fadeMs: Number(s.fadeMs), sourceBusIds, selectedBusIds, primaryBusId: s.primaryBusId === null ? null : text(s.primaryBusId), emergencyMuted: bool(s.emergencyMuted) };
+    })
   };
 }

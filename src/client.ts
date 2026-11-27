@@ -1,8 +1,10 @@
 import { request, type ClientRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { ApiError, parseState, safeCode, uuid, type Code, type State } from './protocol.ts';
 import { globalSettings, record, type GlobalSettings } from './settings.ts';
+import { pinnedAgent, validAddress } from './lan.ts';
 
 export interface Clock {
   now(): number;
@@ -34,19 +36,24 @@ export class ParaBusClient {
   private authReconnectedAt?: number;
   private operations = new Set<string>();
   private listeners = new Set<() => void>();
+  private abort = new AbortController();
   constructor(private clock: Clock = realClock) {}
   onChange(fn: () => void): () => void { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; }
   private changed(): void { for (const fn of this.listeners) fn(); }
-  get connectionSettings(): { port: number; tokenConfigured: boolean } { return { port: this.config.port, tokenConfigured: !!this.config.token }; }
+  get connectionSettings() { return { port: this.config.port, tokenConfigured: !!this.config.token, ...(this.config.mode === 'lan' ? { mode: 'lan', address: this.config.address, fingerprint: this.config.fingerprint } : {}) }; }
+  canExecute(operation: string): boolean { return this.operations.has(operation); }
+  get isLan(): boolean { return this.config.mode === 'lan'; }
   configure(value: unknown): void {
     this.stop(); this.config = globalSettings(value); this.attempt = 0;
+    this.abort = new AbortController();
     this.authCloseChecks = []; this.authReconnectPending = false; this.authReconnectedAt = undefined;
     if (!this.config.token) { this.status = 'CONFIGURE'; this.changed(); return; }
+    if (this.isLan && (!validAddress(this.config.address) || !/^[a-f0-9]{64}$/.test(this.config.fingerprint ?? '') || !/^[A-Za-z0-9_-]{43}$/.test(this.config.token))) { this.status = 'CONFIGURE'; this.changed(); return; }
     this.stopped = false; void this.connect(this.generation);
   }
   /** An offline press is consumed by connection setup, never retained as an action. */
   connectOnPress(): void {
-    if (this.status === 'UNAUTHORIZED' || this.status === 'CONFIGURE' || !this.config.token) return;
+    if (this.status === 'UNAUTHORIZED' || this.status === 'CERTIFICATE' || this.status === 'CONFIGURE' || !this.config.token) return;
     if (this.status === 'CONNECTED' && this.state) return;
     if (this.connecting) {
       // Join the current probe rather than opening parallel connections on repeated presses.
@@ -56,6 +63,7 @@ export class ParaBusClient {
   }
   stop(): void {
     this.stopped = true; this.connecting = false; this.disabledPolling = false;
+    this.abort.abort();
     this.generation++; this.state = undefined; this.operations.clear();
     this.connectedAt = undefined; this.reconnectDelay = undefined;
     if (this.timer) this.clock.clearTimeout(this.timer); this.timer = undefined;
@@ -68,10 +76,11 @@ export class ParaBusClient {
   private live(generation: number): boolean { return !this.stopped && generation === this.generation; }
   private async http(path: '/info' | '/state' | '/actions', body?: unknown): Promise<Record<string, unknown>> {
     const encoded = body === undefined ? undefined : JSON.stringify(body);
+    const agent = this.isLan ? pinnedAgent({ address: this.config.address!, port: this.config.port, fingerprint: this.config.fingerprint! }, this.abort.signal) : undefined;
     return new Promise((resolve, reject) => {
-      const req = request({ hostname: '127.0.0.1', port: this.config.port, path: `/external/v1${path}`,
-        method: encoded ? 'POST' : 'GET', agent: false,
-        headers: { Authorization: `Bearer ${this.config.token}`, ...(encoded ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(encoded) } : {}) }
+      const req = (this.isLan ? httpsRequest : request)({ hostname: this.isLan ? this.config.address! : '127.0.0.1', port: this.config.port, path: `/external/v1${path}`,
+        method: encoded ? 'POST' : 'GET', agent: agent ?? false,
+        headers: { Authorization: `Bearer ${this.config.token}`, ...(this.isLan ? { Host: `${this.config.address}:${this.config.port}` } : {}), ...(encoded ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(encoded) } : {}) }
       }, res => {
         let bytes = 0; const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => { bytes += chunk.length; if (bytes > 1024 * 1024) req.destroy(); else chunks.push(chunk); });
@@ -93,9 +102,9 @@ export class ParaBusClient {
       this.requests.add(req); req.once('close', () => this.requests.delete(req));
       // A total deadline also bounds trickle responses, unlike an idle timeout alone.
       const deadline = setTimeout(() => req.destroy(), 5000); deadline.unref();
-      req.once('close', () => clearTimeout(deadline));
+      req.once('close', () => { clearTimeout(deadline); agent?.destroy(); });
       req.setTimeout(5000, () => req.destroy());
-      req.on('error', () => reject(new ApiError('OFFLINE')));
+      req.on('error', error => reject(error instanceof ApiError ? error : new ApiError('OFFLINE')));
       if (encoded) req.write(encoded); req.end();
     });
   }
@@ -114,8 +123,9 @@ export class ParaBusClient {
       if (info.instanceId !== state.instanceId || result.instanceId !== state.instanceId) throw new ApiError('STALE_REVISION');
       if (!state.enabled) throw new ApiError('DISABLED');
       this.state = state;
-      const ws = new WebSocket(`ws://127.0.0.1:${this.config.port}/external/v1/ws`, {
-        headers: { Authorization: `Bearer ${this.config.token}` }, followRedirects: false,
+      const ws = new WebSocket(`${this.isLan ? 'wss' : 'ws'}://${this.isLan ? this.config.address : '127.0.0.1'}:${this.config.port}/external/v1/ws`, {
+        ...(this.isLan ? { agent: pinnedAgent({ address: this.config.address!, port: this.config.port, fingerprint: this.config.fingerprint! }, this.abort.signal) } : {}),
+        headers: { Authorization: `Bearer ${this.config.token}`, ...(this.isLan ? { Host: `${this.config.address}:${this.config.port}` } : {}) }, followRedirects: false,
         handshakeTimeout: 5000, maxPayload: 1024 * 1024, perMessageDeflate: false
       });
       this.ws = ws;
@@ -162,7 +172,7 @@ export class ParaBusClient {
           this.reconnect(g, new ApiError(code, undefined, Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0));
         });
       });
-      ws.on('error', () => { /* close handles retry; never log the request/error object */ });
+      ws.on('error', error => { if (error instanceof ApiError && error.code === 'CERTIFICATE' && this.live(g)) this.halt('CERTIFICATE'); /* never log request/error objects */ });
       ws.on('close', code => {
         if (!this.live(g) || ws !== this.ws) return;
         // Close codes select connection policy, never establish a past operation's result.
@@ -193,7 +203,7 @@ export class ParaBusClient {
   }
   private reconnect(g: number, error: ApiError, immediate = false): void {
     if (!this.live(g)) return;
-    if (['UNAUTHORIZED', 'INCOMPATIBLE'].includes(error.code)) { this.halt(error.code); return; }
+    if (['UNAUTHORIZED', 'INCOMPATIBLE', 'CERTIFICATE'].includes(error.code)) { this.halt(error.code); return; }
     if (error.code === 'DISABLED') this.disabledPolling = true;
     if (this.connectedAt !== undefined && this.clock.now() - this.connectedAt >= 30000) this.attempt = 0;
     this.connecting = false; this.connectedAt = undefined; this.state = undefined;
@@ -210,7 +220,7 @@ export class ParaBusClient {
   /** One physical press, one POST, one UUID. No automatic action retries or queue. */
   async execute(operation: string, args: unknown): Promise<void> {
     if (this.status !== 'CONNECTED' || !this.state) throw new ApiError(this.status === 'CONNECTED' ? 'OFFLINE' : this.status);
-    if (!this.operations.has(operation)) throw new ApiError('INCOMPATIBLE');
+    if (!this.operations.has(operation)) throw new ApiError(this.isLan ? 'TIER_FORBIDDEN' : 'INCOMPATIBLE');
     const g = this.generation, instanceId = this.state.instanceId, requestId = randomUUID();
     try {
       const result = await this.http('/actions', { requestId, instanceId, operation, args });

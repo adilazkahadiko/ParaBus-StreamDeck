@@ -4,6 +4,12 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 const require = createRequire(import.meta.url);
 const plugin = 'io.github.adilazkahadiko.parabus.sdPlugin';
+const version = JSON.parse(await readFile('package.json', 'utf8')).version;
+const manifest = JSON.parse(await readFile(`${plugin}/manifest.json`, 'utf8'));
+const sourceNotice = await readFile(`${plugin}/SOURCE.txt`, 'utf8');
+if (manifest.Version !== `${version}.0` || !sourceNotice.includes(`/tree/v${version}`) || !sourceNotice.includes(`/refs/tags/v${version}.zip`)) {
+  throw new Error('Package version and corresponding-source notice must match');
+}
 await mkdir(`${plugin}/bin`, { recursive: true });
 await mkdir('dist', { recursive: true });
 await copyFile('LICENSE', `${plugin}/LICENSE`);

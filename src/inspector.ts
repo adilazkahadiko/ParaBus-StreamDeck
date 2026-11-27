@@ -1,13 +1,18 @@
 import { Buttons } from './buttons.ts';
 import { busChoices } from './display-names.ts';
 import { buttonSettings, globalSettings, record, type GlobalSettings } from './settings.ts';
+import { teamChoices } from './buttons.ts';
+import { parseConnectionCode, validAddress } from './lan.ts';
+import { ApiError } from './protocol.ts';
 
 export interface SettingsStore {
+  warning?: string;
   get(): Promise<unknown>;
   set(value: GlobalSettings): Promise<void>;
   setButton(id: string, value: ReturnType<typeof buttonSettings>): Promise<void>;
 }
 export class Inspector {
+  private pending: Promise<unknown> = Promise.resolve();
   constructor(private buttons: Buttons, private store: SettingsStore) {}
   snapshot(id: string, includeSettings = false) {
     const client = this.buttons.client, state = client.state;
@@ -27,18 +32,39 @@ export class Inspector {
       type: 'status', ...client.connectionSettings, status: client.status, hasState: state !== undefined,
       ...(includeSettings ? { settings: this.buttons.settings(id) } : {}),
       users, buses,
+      storageWarning: this.store.warning ?? '',
+      selectors: state?.selectors.map(selector => ({ id: selector.selectorId, label: selector.name, mode: selector.mode, teams: teamChoices(state, selector.selectorId) })) ?? [],
       profiles: state?.tx.bots.map(b => b.profileId) ?? []
     };
   }
-  async message(id: string, value: unknown): Promise<ReturnType<Inspector['snapshot']>> {
+  message(id: string, value: unknown) {
+    const result = this.pending.then(() => this.handle(id, value)); this.pending = result.catch(() => {}); return result;
+  }
+  private async handle(id: string, value: unknown) {
     const msg = record(value);
+    if (msg.type === 'connection.preview') {
+      const { address, port, fingerprint } = parseConnectionCode(msg.code);
+      return { type: 'connection-preview', address, port, fingerprint };
+    }
     if (msg.type === 'connection.save') {
-      const previous = globalSettings(await this.store.get());
-      const next = globalSettings({ port: msg.port, token: typeof msg.token === 'string' && msg.token.length ? msg.token : previous.token });
+      let previous: GlobalSettings;
+      try { previous = globalSettings(await this.store.get()); }
+      catch (error) {
+        // Re-entry must work when a token belongs to another Windows account.
+        if (!(typeof msg.code === 'string' && msg.code.length || typeof msg.token === 'string' && msg.token.length)) throw error;
+        previous = globalSettings({});
+      }
+      let next: GlobalSettings;
+      if (msg.mode === 'lan') {
+        const parsed = typeof msg.code === 'string' && msg.code.length ? parseConnectionCode(msg.code) : undefined;
+        if (!parsed && previous.mode !== 'lan') throw new ApiError('INVALID');
+        const address = typeof msg.address === 'string' && msg.address.length ? msg.address : parsed?.address ?? previous.address;
+        if (!validAddress(address)) throw new ApiError('INVALID');
+        next = { mode: 'lan', address, port: parsed?.port ?? previous.port, fingerprint: parsed?.fingerprint ?? previous.fingerprint, token: parsed?.token ?? previous.token };
+      } else next = globalSettings({ port: msg.port, token: typeof msg.token === 'string' && msg.token.length ? msg.token : previous.mode === 'lan' ? '' : previous.token });
       await this.store.set(next); this.buttons.client.configure(next);
     } else if (msg.type === 'connection.clear') {
-      const next = { port: this.buttons.client.connectionSettings.port, token: '' };
-      this.buttons.client.stop(); await this.store.set(next); this.buttons.client.configure(next);
+      this.buttons.client.stop(); await this.store.set({ port: this.buttons.client.connectionSettings.port, token: '' }); this.buttons.client.configure({ port: this.buttons.client.connectionSettings.port, token: '' });
     } else if (msg.type === 'connection.connect') {
       this.buttons.client.configure(await this.store.get());
     } else if (msg.type === 'button.save') {

@@ -8,6 +8,7 @@ The complete tracked source inventory follows. Generated installers, compiled Ja
 LICENSE
 README.md
 README.ja.md
+CHANGELOG.md
 package.json
 package-lock.json
 tsconfig.json
@@ -18,8 +19,10 @@ docs/
 src/
   buttons.ts
   client.ts
+  credentials.ts
   display-names.ts
   inspector.ts
+  lan.ts
   plugin.ts
   private-logging.ts
   protocol.ts
@@ -35,11 +38,14 @@ tests/
   control.test.mjs
   inspector-labels.test.mjs
   inspector-ui.test.mjs
+  lan-selector.test.mjs
+  helpers/certificate.mjs
   mock-parabus.mjs
   sdk.test.mjs
 io.github.adilazkahadiko.parabus.sdPlugin/
   manifest.json
   package.json
+  SOURCE.txt
   ui/
     inspector.html
     inspector.css
@@ -57,6 +63,8 @@ io.github.adilazkahadiko.parabus.sdPlugin/
     plugin.png
     plugin.svg
     plugin@2x.png
+    selector.svg
+    selector-off.svg
 ```
 
-47 tracked files. The generated pack also includes the compiled plugin, GPL license and complete bundled dependency license texts.
+The generated pack also includes the compiled plugin, GPL license, complete bundled dependency license texts and the versioned corresponding-source notice. It contains no connection settings or credentials.

@@ -1,6 +1,14 @@
 # ParaBus for Stream Deck
 
-GPL-3.0-only. Version 0.1.3 in preparation for Stream Deck MK.2 buttons on Windows 10+ and Stream Deck 7.1+. Uses the official Node.js SDK, with manifest Node.js **24**. See [日本語](README.ja.md).
+GPL-3.0-only. Version 0.2.0 for Stream Deck MK.2 buttons on Windows 10+ and Stream Deck 7.1+. Uses the official Node.js SDK, with manifest Node.js **24**. See [日本語](README.ja.md) and [CHANGELOG](CHANGELOG.md).
+
+0.2.0 adds authenticated LAN connections and Output Selector / Selector OFF buttons. These features require a ParaBus build containing PRs #40 and #41. Older ParaBus versions continue to support the existing local buttons.
+
+Choose **接続コード / 別のPC** and paste the host's `parabus1:` code. The inspector validates it and shows only IPv4, port and SHA-256 fingerprint. Save the connection. The code contains a device key: do not show it to others or paste it into chat. **IPアドレスを変更** changes only the destination IPv4; the certificate pin remains mandatory. A different or expired certificate stops the connection before any key is sent, for both HTTPS and WSS. The inspector shows “接続先が本物のParaBusか確認できません”. Reconnect explicitly after correcting the code/address; there is no downgrade to HTTP.
+
+For each selector button, choose the selector and team from the granted lists. SWITCH selectors switch on short release; holding for at least 0.5 seconds and releasing adds an unselected team or removes a selected team. ADDITIVE selectors toggle on release. Active teams light up; added SWITCH teams show `＋`. Without display-name permission they use `Team 1`, `Team 2`, etc. Removing the final team displays `OFFを使用`; use the separate Selector OFF button. Disconnected presses are consumed, never queued. Operations denied by the host show `権限なし`, including existing mute/fader/emergency buttons over LAN. This plugin still sends only Tier A operations.
+
+The original local connection remains **このPC / 127.0.0.1**, port 4175 by default, with a device token. Existing action IDs and local settings remain compatible.
 
 Requires **ParaBus v0.1.0-beta.6 or later**. ParaBus beta.5 and earlier do not provide the external control API. Get ParaBus from the [beta.6 download page](https://github.com/adilazkahadiko/ParaBus/releases/tag/v0.1.0-beta.6).
 
@@ -24,7 +32,11 @@ Use **ボタンの表示名（任意） / Button label (optional)** near Target 
 
 In ParaBus **SETUP → 接続する機器**, register a device and copy its once-displayed token into the plugin's password field. Enable external control explicitly, including after each ParaBus restart. Stage B permissions are unnecessary; display names are optional. Save the connection, then select the target and save each button. The host is fixed at `127.0.0.1`; the default port is `4175`.
 
-Tokens are stored **only in plugin global settings**, never action settings. The inspector sends new input to the plugin and only receives a configured/not-configured flag. Global settings are managed by Stream Deck; this does not promise encryption. Protect local app data, revoke tokens when needed, and keep tokens out of source control.
+Tokens are stored **only in plugin global settings**, never action settings. On Windows, 0.2.0 encrypts the token with **CurrentUser DPAPI** before calling the SDK's settings writer (`protectedToken: dpapi:v1:…`). The connection code is discarded after parsing; address, port and pin are non-secret metadata. Legacy plaintext global tokens are migrated when read. If migration fails, the old configuration remains usable with a warning; new saves fail without writing plaintext. An unreadable encrypted key requires re-entry on the current Windows account. The inspector never receives saved token values. Removing the token clears its saved ciphertext; revoke the host device separately.
+
+Storage investigation **U4**: on this Windows installation the Stream Deck-managed global value is `HKCU\Software\Elgato Systems GmbH\StreamDeck`, value name `io.github.adilazkahadiko.parabusio.github.adilazkahadiko.parabus` (REG_SZ). Only its location/type were inspected; no live credential contents were displayed or modified. This is an observed app implementation detail, not a stable SDK filename contract. The plugin does not write the registry directly or add a credential file under `%APPDATA%\Elgato\StreamDeck`. [Elgato's settings guide](https://docs.elgato.com/streamdeck/sdk/guides/settings/) specifies global settings for user access tokens and warns that action settings are plaintext and exported. The extra DPAPI layer does not depend on Stream Deck's internal encoding. It protects at rest for the current Windows user; backups and an already-compromised user account still require care. No new npm dependency is used. See [verification](docs/VERIFICATION.md).
+
+The pack contains `SOURCE.txt` with corresponding source [v0.2.0](https://github.com/adilazkahadiko/ParaBus-StreamDeck/tree/v0.2.0) and its archive URL (audit L5). This PR prepares those version URLs; it does not create the tag or publish a Release. The tag must accompany eventual distribution.
 
 [Profile-export inspection](README.ja.md#プロファイル書き出しの手動確認) completed on **2026-11-16**: a profile exported from the actual Stream Deck app was inspected; no token was present. ParaBus button settings contained only `target`, `participant`, `discordUserId`, `busId`, and `stepDb`. The only token-shaped strings were `external-bus:` aliases in `busId`.
 

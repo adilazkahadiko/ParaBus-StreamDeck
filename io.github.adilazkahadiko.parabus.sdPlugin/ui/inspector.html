@@ -12,16 +12,33 @@
   <p id="status" role="status">Waiting for plugin…</p>
   <fieldset>
     <legend>Connection · all buttons / 全ボタン共通</legend>
+    <label>接続方法 / Connection <select id="connectionMode"><option value="local">このPC / 127.0.0.1</option><option value="lan">接続コード / 別のPC</option></select></label>
+    <div id="localConnection">
     <p>127.0.0.1 (fixed / 固定)</p>
     <label>Port / ポート <input id="port" type="number" min="1" max="65535" value="4175"></label>
     <label>New token / 新しいトークン <input id="token" type="password" autocomplete="off" spellcheck="false" maxlength="512" placeholder="Leave blank to keep / 空欄で保持"></label>
+    </div>
+    <div id="lanConnection" hidden>
+      <label>接続コード / Connection code <input id="connectionCode" type="password" autocomplete="off" spellcheck="false" maxlength="4096" placeholder="parabus1:…（空欄で保持）"></label>
+      <p>鍵を含みます。人に見せない・チャットに貼らないでください。</p>
+      <p id="connectionDetails" role="status"></p>
+      <label>IPアドレスを変更 / IPv4 override <input id="addressOverride" type="text" autocomplete="off" spellcheck="false" maxlength="15" placeholder="空欄なら接続コードのIP"></label>
+      <p>IPを変えても証明書の指紋を必ず確認します。接続先のなりすましを許可する変更ではありません。</p>
+    </div>
     <p id="configured">Token: not configured / 未設定</p>
+    <p id="storageWarning" role="status"></p>
     <button id="saveConnection">Save connection / 接続を保存</button>
     <button id="connect">Connect / 再接続</button>
     <button id="clear">Remove token / トークン削除</button>
   </fieldset>
   <fieldset id="buttonSettings">
     <legend>This button / このボタン</legend>
+    <div id="selectorFields" hidden>
+      <label>セレクター <select id="selectorId"></select></label>
+      <label id="teamField">チーム / VC Bus <select id="teamBusId"></select></label>
+      <p>切り替え型: 短押しで切り替え、0.5秒以上押して離すと追加・外す。足し算型: ON/OFF。最後の1チームを消すには「セレクター OFF」を使ってください。</p>
+    </div>
+    <div id="legacyFields">
     <label>Target / 対象 <select id="target"><option value="">Select target / 対象を選択</option><option value="bus">Bus</option><option value="send">Participant MIX (Send) / 参加者の MIX（Send）</option><option value="tx">TX</option></select></label>
     <label>ボタンの表示名（任意） / Button label (optional) <input id="label" type="text" maxlength="32" aria-describedby="labelHelp"></label>
     <p id="labelHelp">空なら自動（ユーザー名・Bus名）。Stream Deck のタイトル欄はプラグインが上書きします。<br>Leave blank for automatic names. The plugin overwrites Stream Deck's title field.</p>
@@ -40,6 +57,7 @@
     <label id="busField">Bus ID <select id="busId"></select></label>
     <label id="profileField">TX profileId <select id="profileId"></select></label>
     <label id="stepField">Step / 1回の量 (dB) <input id="stepDb" type="number" min="0.1" max="6" step="0.1" value="1" list="steps"><datalist id="steps"><option value="1"><option value="2"><option value="3"><option value="6"></datalist></label>
+    </div>
     <button id="saveButton">Save button / ボタンを保存</button>
   </fieldset>
   <p id="emergencyHelp" hidden>Only turns emergency mute ON. Release it in ParaBus.<br>緊急ミュートを ON にする専用ボタンです。解除は ParaBus で行います。</p>

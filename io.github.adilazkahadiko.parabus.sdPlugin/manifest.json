@@ -3,8 +3,8 @@
   "UUID": "io.github.adilazkahadiko.parabus",
   "Name": "ParaBus",
   "Author": "adilazkahadiko",
-  "Description": "Local buttons for ParaBus external control API v1.",
-  "Version": "0.1.3.0",
+  "Description": "Local and authenticated LAN buttons for ParaBus external control API v1.",
+  "Version": "0.2.0.0",
   "SDKVersion": 2,
   "CodePath": "bin/plugin.js",
   "Icon": "imgs/plugin",
@@ -24,6 +24,42 @@
   ],
   "PropertyInspectorPath": "ui/inspector.html",
   "Actions": [
+    {
+      "UUID": "io.github.adilazkahadiko.parabus.selector",
+      "Name": "出力セレクター / Output Selector",
+      "Icon": "imgs/selector",
+      "Controllers": [
+        "Keypad"
+      ],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "imgs/selector",
+          "TitleAlignment": "bottom",
+          "FontSize": 9,
+          "FontFamily": "Arial"
+        }
+      ]
+    },
+    {
+      "UUID": "io.github.adilazkahadiko.parabus.selector-off",
+      "Name": "セレクター OFF / Selector OFF",
+      "Icon": "imgs/selector-off",
+      "Controllers": [
+        "Keypad"
+      ],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "imgs/selector-off",
+          "TitleAlignment": "bottom",
+          "FontSize": 9,
+          "FontFamily": "Arial"
+        }
+      ]
+    },
     {
       "UUID": "io.github.adilazkahadiko.parabus.mute",
       "Name": "Toggle Mute",

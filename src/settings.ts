@@ -1,5 +1,6 @@
 export type ButtonSettings = {
   target?: 'bus' | 'send' | 'tx';
+  selectorId?: string;
   participant?: 'user' | 'slot';
   discordUserId?: string;
   index?: number;
@@ -9,7 +10,7 @@ export type ButtonSettings = {
   stepDb?: number;
   label?: string;
 };
-export type GlobalSettings = { port: number; token: string };
+export type GlobalSettings = { port: number; token: string; mode?: 'lan'; address?: string; fingerprint?: string };
 export const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const id = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 256 && !/[\x00-\x1f\x7f]/.test(v);
@@ -17,6 +18,7 @@ const id = (v: unknown): v is string => typeof v === 'string' && v.length > 0 &&
 /** An allowlist: only user-entered labels, never API names, tokens or revisions. */
 export function buttonSettings(value: unknown): ButtonSettings {
   const v = record(value), s: ButtonSettings = {};
+  if (id(v.selectorId)) { s.selectorId = v.selectorId; if (id(v.busId)) s.busId = v.busId; }
   if (['bus', 'send', 'tx'].includes(String(v.target))) s.target = v.target as ButtonSettings['target'];
   if (s.target === 'send') {
     if (v.participant === 'slot') {
@@ -41,6 +43,7 @@ export function globalSettings(value: unknown): GlobalSettings {
   const v = record(value);
   return {
     port: Number.isInteger(v.port) && Number(v.port) >= 1 && Number(v.port) <= 65535 ? Number(v.port) : 4175,
-    token: typeof v.token === 'string' && /^[\x21-\x7e]{1,512}$/.test(v.token) ? v.token : ''
+    token: typeof v.token === 'string' && /^[\x21-\x7e]{1,512}$/.test(v.token) ? v.token : '',
+    ...(v.mode === 'lan' ? { mode: 'lan' as const, address: typeof v.address === 'string' ? v.address : '', fingerprint: typeof v.fingerprint === 'string' ? v.fingerprint : '' } : {})
   };
 }

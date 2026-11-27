@@ -6,14 +6,19 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { WebSocketServer } from 'ws';
 import { MockParaBus, until, busId } from './mock-parabus.mjs';
+import { dpapi } from '../dist/test-api.mjs';
 
-test('real SDK transport: four registered actions, global-only token, clean PI/settings/titles/logs', async t => {
+test('real SDK transport: six actions, selector keyUp/hold/OFF, encrypted global-only token, clean PI/settings/titles/logs', async t => {
   const server = await new MockParaBus().start();
   const syntheticNames = ['DemoA', 'MixA'];
   server.state.permissions.readDisplayNames = true;
   server.state.registeredUsers[0].displayName = syntheticNames[0];
   server.state.participants[0].displayName = syntheticNames[0];
   server.state.buses[0].label = syntheticNames[1];
+  const selectorId = 'external-bus:' + 'c'.repeat(43), secondTeam = 'external-bus:' + 'b'.repeat(43);
+  server.extraOperations = ['selector.select', 'selector.off'];
+  server.state.buses.push({ ...server.state.buses[0], busId: secondTeam });
+  server.state.selectors = [{ selectorId, name: 'Director', mode: 'SWITCH', fadeMs: 300, sourceBusIds: [busId, secondTeam], selectedBusIds: [busId], primaryBusId: busId, emergencyMuted: false }];
   const sdk = new WebSocketServer({ port: 0, host: '127.0.0.1' }); await once(sdk, 'listening');
   const root = 'io.github.adilazkahadiko.parabus', cwd = path.resolve(`${root}.sdPlugin`);
   let settings = { port: server.port, token: server.token }, socket, child, exited = false, output = '';
@@ -88,14 +93,34 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
   }
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(server.actions.length, 5, 'legacy settings received later never send actions');
+  const beforeSave = received.length;
   send('sendToPlugin', 'mute', { type: 'connection.save', port: server.port, token: server.token });
-  await until(() => received.filter(m => m.event === 'sendToPropertyInspector').length >= 3);
+  await until(() => received.slice(beforeSave).some(m => m.event === 'sendToPropertyInspector' && m.payload.status === 'CONNECTED'));
+  send('willAppear', 'selector', { controller: 'Keypad', settings: { selectorId, busId: secondTeam } });
+  send('willAppear', 'selector-off', { controller: 'Keypad', settings: { selectorId } });
+  await until(() => received.some(m => m.context === 'selector' && m.event === 'setTitle'));
+  const selectorBaseline = server.actions.length;
+  send('keyDown', 'selector', { controller: 'Keypad' }); await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(server.actions.length, selectorBaseline, 'selector never executes on keyDown');
+  send('keyUp', 'selector', { controller: 'Keypad' }); await until(() => server.actions.length === selectorBaseline + 1);
+  assert.equal(server.actions.at(-1).args.operation, 'SWITCH');
+  await until(() => received.some(m => m.context === 'selector' && m.event === 'setTitle' && m.payload.title.endsWith('\nON')));
+  send('keyDown', 'selector', { controller: 'Keypad' }); await new Promise(resolve => setTimeout(resolve, 520)); send('keyUp', 'selector', { controller: 'Keypad' });
+  await until(() => received.some(m => m.context === 'selector' && m.event === 'setTitle' && m.payload.title === 'OFFを使用'));
+  send('keyDown', 'selector-off', { controller: 'Keypad' }); await until(() => server.actions.at(-1)?.operation === 'selector.off');
+  const connectionCode = 'parabus1:' + Buffer.from(JSON.stringify({ v: 1, address: '127.0.0.1', port: server.port, token: server.token, fingerprint: 'a'.repeat(64) })).toString('base64url');
+  send('sendToPlugin', 'selector', { type: 'connection.preview', code: connectionCode });
+  await until(() => received.some(m => m.event === 'sendToPropertyInspector' && m.payload.type === 'connection-preview'));
   // Exercise SDK error logging too: raw inbound payloads must never reach a log.
   socket.send(`{broken:${server.token},${syntheticNames.join(',')}`);
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.ok(!JSON.stringify(received).includes(server.token), 'secret must not appear in settings, PI or titles');
-  assert.ok(settings.token === server.token, 'secret belongs only in global storage');
+  assert.equal(JSON.stringify(received).includes(connectionCode), false);
+  assert.equal(Object.hasOwn(settings, 'token'), false, 'no plaintext global storage');
+  assert.ok(settings.protectedToken.startsWith('dpapi:v1:'));
+  assert.equal((await dpapi('unprotect', settings.protectedToken.slice(9))) === server.token, true);
   assert.ok(!output.includes(server.token), 'secret must not appear in stdout/stderr');
+  assert.equal(output.includes(connectionCode), false);
   assert.ok(!output.includes('User Cue20'), 'custom labels must not appear in stdout/stderr');
   for (const name of syntheticNames) {
     assert.ok(!output.includes(name), 'display names must not appear in stdout/stderr');
@@ -106,6 +131,7 @@ test('real SDK transport: four registered actions, global-only token, clean PI/s
   for (const name of logs) {
     const data = await readFile(path.join(cwd, 'logs', name), 'utf8');
     assert.ok(!data.includes(server.token), 'secret must not appear in SDK log files');
+    assert.equal(data.includes(connectionCode), false);
     assert.ok(!data.includes('User Cue20'), 'custom labels must not appear in SDK log files');
     for (const name of syntheticNames) assert.ok(!data.includes(name), 'display names must not appear in SDK log files');
   }

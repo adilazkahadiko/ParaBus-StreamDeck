@@ -196,7 +196,7 @@ test('emergency, connection errors and resolution errors retain their exact text
   assert.deepEqual(view('emergency', {}, client), { title: 'EMERGENCY\nON', image: 'imgs/emergency-on.svg' });
   const errors = {
     INVALID: 'INVALID', UNAUTHORIZED: '401\nAUTH', HOST_FORBIDDEN: 'HOST', ORIGIN_FORBIDDEN: 'ORIGIN',
-    TIER_FORBIDDEN: 'DENIED', NOT_FOUND: 'NO TARGET', LOCKED: 'LOCKED', STALE_REVISION: 'STALE',
+    TIER_FORBIDDEN: '権限なし', NOT_FOUND: 'NO TARGET', LOCKED: 'LOCKED', STALE_REVISION: 'STALE',
     RATE_LIMITED: 'RATE\nLIMIT', DISABLED: 'DISABLED', UNAVAILABLE: 'ERROR', INTERNAL: 'ERROR',
     OFFLINE: 'OFFLINE', CONNECTING: 'CONNECT', STOPPED: 'STOPPED', CONFIGURE: 'SETUP', BUSY: 'BUSY', INCOMPATIBLE: 'API\nVERSION'
   };
@@ -247,7 +247,7 @@ test('next state updates rename user/Bus, reassign slots and revoke names withou
 
 test('manifest keeps emergency defaults while sizing mute/fader titles for 72px keys', async () => {
   const manifest = JSON.parse(await readFile('io.github.adilazkahadiko.parabus.sdPlugin/manifest.json', 'utf8'));
-  assert.equal(manifest.Version, '0.1.3.0');
+  assert.equal(manifest.Version, '0.2.0.0');
   for (const action of manifest.Actions) {
     assert.equal(action.States[0].TitleAlignment, 'bottom');
     assert.equal(action.States[0].FontSize, action.UUID.endsWith('.emergency') ? 11 : 9);

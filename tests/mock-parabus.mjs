@@ -18,10 +18,13 @@ export function fixture() {
   };
 }
 export class MockParaBus {
+  address = '127.0.0.1';
   token = randomBytes(32).toString('base64url'); // Ephemeral test credential; never printed or persisted.
   state = fixture();
   requests = []; // Header names + auth boolean only. Never retain the bearer value.
   actions = [];
+  operations = operations;
+  extraOperations = [];
   wsServer = new WebSocketServer({ noServer: true });
   failure;
   pathFailures = {};
@@ -51,7 +54,7 @@ export class MockParaBus {
     const auth = req.headers.authorization === `Bearer ${this.token}`;
     this.requests.push({ path: req.url, method: req.method, ws, auth, names: Object.keys(req.headers), host: req.headers.host,
       contentType: req.headers['content-type'], urlHasToken: req.url.includes(this.token), protocolHasToken: String(req.headers['sec-websocket-protocol']).includes(this.token) });
-    return auth && !Object.keys(req.headers).some(k => k === 'origin' || k.startsWith('sec-fetch-')) && req.headers.host === `127.0.0.1:${this.port}`;
+    return auth && !Object.keys(req.headers).some(k => k === 'origin' || k.startsWith('sec-fetch-')) && req.headers.host === `${this.address}:${this.port}`;
   }
   json(res, status, body, headers = {}) { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers }); res.end(JSON.stringify(body)); }
   success(data, requestId) { return { ok: true, ...(requestId ? { requestId } : {}), instanceId: this.state.instanceId, revision: this.state.revision, data }; }
@@ -63,7 +66,7 @@ export class MockParaBus {
     if (failure) { this.json(res, failure.status, { ok: false, code: failure.code, message: 'Mock failure' }); return; }
     if (req.url === '/external/v1/info') {
       this.json(res, 200, this.success({ apiVersion: '1.0', paraBusVersion: '0.1.0', features: ['state.ws', 'fader.relative', 'participants.slot', 'participants.user'],
-        operations: operations.map(name => ({ name, tiers: ['A'] })), limits: {}, instanceId: this.state.instanceId })); return;
+        operations: [...this.operations, ...this.extraOperations].map(name => ({ name, tiers: ['A'] })), limits: {}, instanceId: this.state.instanceId })); return;
     }
     if (req.url === '/external/v1/state') { this.json(res, 200, this.success(this.state)); return; }
     if (req.url !== '/external/v1/actions' || req.method !== 'POST') { this.json(res, 404, { ok: false, code: 'NOT_FOUND', message: 'Mock path' }); return; }
@@ -76,9 +79,22 @@ export class MockParaBus {
       this.json(res, f.status, { ok: false, code: f.code, message: f.message ?? 'Mock failure', ...(f.current ? { current: f.current } : {}) }, f.code === 'RATE_LIMITED' ? { 'Retry-After': '2' } : {}); return;
     }
     const { operation, args } = payload;
-    if (!operations.includes(operation)) { this.json(res, 400, { ok: false, code: 'INVALID', message: 'Mock unsupported operation' }); return; }
+    if (![...this.operations, ...this.extraOperations].includes(operation)) { this.json(res, 400, { ok: false, code: 'INVALID', message: 'Mock unsupported operation' }); return; }
     if (payload.instanceId !== this.state.instanceId) { this.json(res, 409, { ok: false, code: 'STALE_REVISION', message: 'Mock stale instance' }); return; }
     const [family, type] = operation.split('.');
+    if (family === 'selector') {
+      const selector = this.state.selectors?.find(s => s.selectorId === args.selectorId);
+      if (!selector || type === 'select' && !selector.sourceBusIds.includes(args.busId)) { this.json(res, 404, { ok: false, code: 'NOT_FOUND' }); return; }
+      if (type === 'off') { selector.selectedBusIds = []; selector.primaryBusId = null; }
+      else {
+        const selected = selector.selectedBusIds.includes(args.busId);
+        if (args.operation === 'REMOVE' && selected && selector.selectedBusIds.length === 1) { this.json(res, 409, { ok: false, code: 'LOCKED' }); return; }
+        if (args.operation === 'SWITCH' && !selected) { selector.selectedBusIds = [args.busId]; selector.primaryBusId = args.busId; }
+        else if (args.operation === 'ADD' && !selected || args.operation === 'TOGGLE' && !selected) selector.selectedBusIds.push(args.busId);
+        else if (args.operation === 'REMOVE' || args.operation === 'TOGGLE') { selector.selectedBusIds = selector.selectedBusIds.filter(id => id !== args.busId); if (selector.primaryBusId === args.busId) selector.primaryBusId = selector.selectedBusIds[0] ?? null; }
+      }
+      this.state.revision++; this.json(res, 200, this.success({}, payload.requestId)); this.broadcast(); return;
+    }
     let object, field;
     if (family === 'emergency') this.state.emergencyMuted = args.active;
     else {
@@ -96,7 +112,7 @@ export class MockParaBus {
   }
   broadcast() { for (const ws of this.wsServer.clients) if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'state', payload: this.state })); }
   disconnect(code) { for (const ws of this.wsServer.clients) code ? ws.close(code) : ws.terminate(); }
-  async start() { await new Promise(resolve => this.server.listen(0, '127.0.0.1', resolve)); this.port = this.server.address().port; return this; }
+  async start() { await new Promise(resolve => this.server.listen(0, this.address, resolve)); this.port = this.server.address().port; return this; }
   async close() { for (const ws of this.wsServer.clients) ws.terminate(); await new Promise(resolve => this.wsServer.close(resolve)); this.server.closeAllConnections(); await new Promise(resolve => this.server.close(resolve)); }
 }
 export async function until(fn, description = 'condition', timeout = 3000) {

@@ -1,0 +1,10 @@
+ParaBus for Stream Deck 0.2.0
+License: GPL-3.0-only (see LICENSE).
+Corresponding source for this package:
+https://github.com/adilazkahadiko/ParaBus-StreamDeck/tree/v0.2.0
+Source archive (when the v0.2.0 tag is published):
+https://github.com/adilazkahadiko/ParaBus-StreamDeck/archive/refs/tags/v0.2.0.zip
+
+Build instructions: README.md and package-lock.json in the source.
+The version tag is reserved for publication; preparing this package does not
+create a tag or a Release.

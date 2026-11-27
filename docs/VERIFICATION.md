@@ -1,5 +1,28 @@
 # Stage 3 verification
 
+## 0.2.0の確認（2026-11-27）
+
+ParaBusのAPI契約は`C:/Dev/ParaBus-public/docs/EXTERNAL_CONTROL_API.md`のmain commit `248623b2d67e8456944377faf38a62bd52f5ad8d`（PR #40・#41とCIDR／鍵保持修正を含む）です。参照クライアント`lan-client.ts`と同じく、TLS 1.3・証明書DER全体のSHA-256・期限・自己署名を確認してから、HTTPまたはWebSocket upgradeのAuthorizationを送ります。接続先はIPv4完全指定で、リダイレクト・HTTPへの降格は行いません。
+
+Node **v24.20.0**（プラグインのmanifest指定major 24）で、既存試験を含む`npm.cmd test`は **177成功、失敗・skip・cancelled 0**。`npm.cmd run typecheck`（`tsc --noEmit`）、`npm.cmd run validate`、`npm.cmd run pack`、`git diff --check`が成功しました。依存の追加・更新はなく、package-lockの差分はプロジェクトの版数だけです。ビルド時にmanifestと対応ソースURLの版数一致も確認します。
+
+- 接続コードの形式、余分な項目・重複キー・エスケープされた重複キー・不正IP／ポート／鍵／指紋を検証。PIには鍵を返しません。
+- テスト用の自己署名証明書をNode cryptoのDER組み立てで毎回生成します。HTTPS/WSSの正常接続、HTTP側の指紋不一致、HTTP state取得後に証明書を差し替えたWSS接続、期限切れを検証。拒否されたTLS接続ではHTTP要求／upgradeがサーバーへ届かず、鍵を送っていません。
+- IPv4 overrideで別のループバックアドレスへHTTPS/WSS接続しても元のpinを維持します。実機ネットワークやファイアウォール規則は使いません。
+- セレクターだけの機器の縮小state（参加者・DSP・TX等なし）を読めます。許可のないセレクター／操作と、未接続を区別して表示します。既存のローカル接続試験も継続しています。
+- 499ms／500msの境界、SWITCH／ADD／REMOVE／TOGGLE、OFF、点灯・「＋」、表示名の権限、LOCKED時の「OFFを使用」、切断・設定変更時の押下破棄を検証。TLS経由の操作とWSS表示更新も確認しました。
+- 模擬Stream Deckホストを使う実SDK transport試験で6アクションを扱い、selectorのkeyDownで送信せず、keyUp・長押し・OFFが命令になることを確認。SDKログ・stdout/stderr・PIへの返信・action settingsに鍵／接続コードを渡しません。
+
+### U4: 保存先とDPAPI
+
+このWindows環境では、global settingsの保存場所として`HKCU\Software\Elgato Systems GmbH\StreamDeck`のREG_SZ値`io.github.adilazkahadiko.parabusio.github.adilazkahadiko.parabus`を確認しました。調べたのは場所・型だけで、稼働中の保存内容の表示・変更は行っていません。これは実装依存の観測結果です。SDKはOS上の内部保存形式を契約にしていないので、プラグインはSDKのget/setGlobalSettingsだけを使います。参照：[Elgato Settings guide](https://docs.elgato.com/streamdeck/sdk/guides/settings/)。
+
+新規保存では、固定PowerShellプログラムを使ってCurrentUser DPAPIで暗号化した`protectedToken`だけをSDKへ渡します。鍵は子プロセスのstdinだけに渡し、引数・環境変数・ログには入れません。秘密の独自ファイルは作りません。コードは保存せず、IP・ポート・指紋と暗号化した鍵に分けます。Windows DPAPIの実際の暗号化／復号、旧形式移行、復号失敗時の再入力、保存と削除の同時要求を検証しました。新規保存の暗号化失敗は平文を書かずに失敗し、旧形式の移行失敗だけは従来の設定を維持して警告します。
+
+### L5と配布物
+
+パックは23ファイルで、`SOURCE.txt`に`https://github.com/adilazkahadiko/ParaBus-StreamDeck/tree/v0.2.0`と対応アーカイブURLを含みます。GPLとバンドル依存のライセンスも同梱します。タグは公開時のための指定だけで、今回タグ・Release・Marketplace公開は行いません。ソース、ビルド、テスト、パック作成だけを行い、稼働中のParaBus／Stream Deckの停止・再起動・開発プラグインのインストールやリンク、Bot接続、実機音声の使用は行っていません。v0.2.0の実機表示確認と実アプリでのプロファイル書き出しは未実施です。下の旧版の実機記録とは区別してください。
+
 ## 0.1.3の確認（2026-11-19）
 
 利用者の実機確認で、0.1.2では `VC Bus 10`～`VC Bus 20` が同じ `VC Bus…` になることが分かりました。0.1.3では半角8文字相当の上限と全角・省略記号を2と数える規則を保ち、末尾の番号・括弧つき番号を残します。まず番号の直前の空白だけを取り除き、まだ長ければ先頭を残り幅まで縮めて `…` と番号を続けます。`VC Bus 9` → `VC Bus 9`、`VC Bus 10` → `VC Bus10`、`VC Bus 20` → `VC Bus20`、`Long Mix 10` → `Long…10`、`配信用ミックス 10` → `配信…10`、`配信用ミックス (2)` → `配…(2)` です。末尾に番号がない名前は従来の末尾省略です。番号だけで上限を超える場合は、利用者の指定どおり幅8を優先して番号の後ろ側を残し、括弧は対で維持します。

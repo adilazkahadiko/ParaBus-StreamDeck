@@ -37,6 +37,34 @@ function ui(kind = 'fader-up') {
   connections[0].onopen();
   return { element, socket: connections[0], connections };
 }
+
+test('LAN inspector masks and clears code, previews only endpoint/pin, supports IP-only changes and certificate warning', () => {
+  const { element, socket } = ui();
+  element('connectionMode').value = 'lan'; element('connectionMode').events.change();
+  assert.equal(element('lanConnection').hidden, false); assert.equal(element('localConnection').hidden, true);
+  element('connectionCode').value = 'parabus1:SYNTHETIC'; element('connectionCode').events.input();
+  assert.equal(socket.messages.at(-1).payload.type, 'connection.preview');
+  socket.onmessage({ data: JSON.stringify({ event: 'sendToPropertyInspector', payload: { type: 'connection-preview', address: '192.0.2.94', port: 4176, fingerprint: 'a'.repeat(64) } }) });
+  assert.match(element('connectionDetails').textContent, /192\.0\.2\.94/); assert.equal(element('connectionDetails').textContent.includes('parabus1:'), false);
+  element('addressOverride').value = '192.0.2.89'; element('saveConnection').events.click();
+  assert.equal(element('connectionCode').value, ''); assert.equal(socket.messages.at(-1).payload.address, '192.0.2.89');
+  assert.equal(socket.messages.at(-1).payload.mode, 'lan');
+  element('saveConnection').events.click(); assert.equal(socket.messages.at(-1).payload.code, '');
+  socket.onmessage({ data: JSON.stringify({ event: 'sendToPropertyInspector', payload: { type: 'status', status: 'CERTIFICATE', mode: 'lan', port: 4176, address: '192.0.2.89', fingerprint: 'a'.repeat(64), tokenConfigured: true, users: [], buses: [], profiles: [], selectors: [] } }) });
+  assert.equal(element('status').textContent, '接続先が本物のParaBusか確認できません');
+  assert.match(html, /id="connectionCode" type="password"/);
+});
+
+for (const kind of ['selector', 'selector-off']) test(`PI ${kind} uses selector/team dropdowns with granted choices and saves only IDs`, () => {
+  const { element, socket } = ui(kind);
+  socket.onmessage({ data: JSON.stringify({ event: 'sendToPropertyInspector', payload: { type: 'status', status: 'CONNECTED', tokenConfigured: true, hasState: true, users: [], buses: [], profiles: [],
+    selectors: [{ id: 'selector-allowed', label: 'Director', teams: [{ id: 'team-allowed', label: 'Team 1' }] }], settings: { selectorId: 'selector-allowed', busId: 'team-allowed' } } }) });
+  assert.equal(element('legacyFields').hidden, true); assert.equal(element('selectorFields').hidden, false);
+  assert.equal(element('teamField').hidden, kind === 'selector-off');
+  assert.equal(element('selectorId').options[1].label, 'Director'); assert.equal(element('teamBusId').options[1].label, 'Team 1');
+  element('saveButton').events.click();
+  assert.deepEqual(JSON.parse(JSON.stringify(socket.messages.at(-1).payload.settings)), { selectorId: 'selector-allowed', ...(kind === 'selector' ? { busId: 'team-allowed' } : {}) });
+});
 test('PI browser: only Stream Deck socket, write-only password, global token message separated from button settings', () => {
   const { element, socket, connections } = ui(); const secret = randomBytes(32).toString('base64url');
   element('token').value = secret; element('saveConnection').events.click();

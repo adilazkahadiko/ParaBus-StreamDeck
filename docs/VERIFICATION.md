@@ -2,6 +2,8 @@
 
 ## 0.2.0の確認（2026-11-27）
 
+2026-11-28追試：TLSハンドシェイク中のreset／正常切断をOFFLINEに分類し、1000ms・2000msのbackoff後に、復帰した正しいHTTPS/WSSサーバーへ自動再接続する試験を追加しました。CERTIFICATEはsecureConnect後の証明書・TLS版の検査失敗だけに限定します。誤pin／期限切れで鍵を送らず停止する既存試験も継続し、全179テスト成功、失敗・skip・cancelled 0。typecheck、build、validate、pack、git diff --checkも成功しました。
+
 ParaBusのAPI契約は`C:/Dev/ParaBus-public/docs/EXTERNAL_CONTROL_API.md`のmain commit `248623b2d67e8456944377faf38a62bd52f5ad8d`（PR #40・#41とCIDR／鍵保持修正を含む）です。参照クライアント`lan-client.ts`と同じく、TLS 1.3・証明書DER全体のSHA-256・期限・自己署名を確認してから、HTTPまたはWebSocket upgradeのAuthorizationを送ります。接続先はIPv4完全指定で、リダイレクト・HTTPへの降格は行いません。
 
 Node **v24.20.0**（プラグインのmanifest指定major 24）で、既存試験を含む`npm.cmd test`は **177成功、失敗・skip・cancelled 0**。`npm.cmd run typecheck`（`tsc --noEmit`）、`npm.cmd run validate`、`npm.cmd run pack`、`git diff --check`が成功しました。依存の追加・更新はなく、package-lockの差分はプロジェクトの版数だけです。ビルド時にmanifestと対応ソースURLの版数一致も確認します。

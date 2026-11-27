@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:https';
+import { createServer as createTcpServer, connect as connectTcp } from 'node:net';
 import { randomBytes, X509Certificate } from 'node:crypto';
 import { ParaBusClient, Buttons, Inspector, CredentialSettings, dpapi, ApiError, parseState, parseConnectionCode, view, buttonSettings } from '../dist/test-api.mjs';
 import { MockParaBus, fixture, until, busId } from './mock-parabus.mjs';
@@ -40,14 +41,39 @@ test('inspector validates code, exposes only endpoint/pin and changes IP without
   assert.equal(stored.address, '192.0.2.89'); assert.equal(Object.hasOwn(stored, 'code'), false);
 });
 
-async function tlsFixture(t, address = '127.0.0.1') {
+async function tlsFixture(t, address = '127.0.0.1', clock) {
   const material = await generateLanCertificate('127.0.0.1'), mock = new MockParaBus(), upgrade = mock.server.listeners('upgrade')[0];
   mock.server = createServer({ cert: material.certificate, key: material.key, minVersion: 'TLSv1.3', maxVersion: 'TLSv1.3' }, (req, res) => { void mock.http(req, res); });
   mock.address = address; mock.server.on('upgrade', upgrade); await mock.start();
-  const client = new ParaBusClient(), target = { mode: 'lan', address, port: mock.port, token: mock.token, fingerprint: new X509Certificate(material.certificate).fingerprint256.replaceAll(':', '').toLowerCase() };
+  const client = new ParaBusClient(clock), target = { mode: 'lan', address, port: mock.port, token: mock.token, fingerprint: new X509Certificate(material.certificate).fingerprint256.replaceAll(':', '').toLowerCase() };
   t.after(async () => { client.stop(); await mock.close(); });
   return { mock, client, target };
 }
+for (const mode of ['reset', 'close']) test(`handshake ${mode} is OFFLINE, automatically backs off and reconnects after the correct TLS server returns`, async t => {
+  const jobs = new Map(); let sequence = 0, now = 0;
+  const clock = { now: () => now, random: () => 0,
+    setTimeout: (fn, ms) => { const id = ++sequence; jobs.set(id, { fn, ms }); return id; }, clearTimeout: id => jobs.delete(id) };
+  const { mock, client, target } = await tlsFixture(t, '127.0.0.1', clock), backendPort = target.port;
+  let recovered = false, attempts = 0; const sockets = new Set();
+  const gate = createTcpServer(socket => {
+    sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => {}); attempts++;
+    if (!recovered) { socket.once('data', () => mode === 'reset' ? socket.resetAndDestroy() : socket.end()); return; }
+    const upstream = connectTcp({ host: '127.0.0.1', port: backendPort }); sockets.add(upstream);
+    upstream.on('close', () => sockets.delete(upstream)); upstream.on('error', () => socket.destroy());
+    socket.on('close', () => upstream.destroy()); upstream.on('close', () => socket.destroy());
+    socket.pipe(upstream); upstream.pipe(socket);
+  });
+  await new Promise(resolve => gate.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { client.stop(); for (const socket of sockets) socket.destroy(); await new Promise(resolve => gate.close(resolve)); });
+  mock.port = gate.address().port; client.configure({ ...target, port: mock.port });
+  await until(() => client.status === 'OFFLINE');
+  assert.equal(client.reconnectDelay, 1000); assert.equal(jobs.size, 1); assert.equal(mock.requests.length, 0);
+  const retry = () => { const [id, job] = jobs.entries().next().value; jobs.delete(id); now += job.ms; job.fn(); };
+  retry(); await until(() => attempts === 2 && client.status === 'OFFLINE');
+  assert.equal(client.reconnectDelay, 2000); assert.equal(jobs.size, 1); assert.equal(mock.requests.length, 0);
+  recovered = true; retry(); await until(() => client.status === 'CONNECTED');
+  assert.ok(attempts >= 5); assert.ok(mock.requests.some(request => request.ws && request.auth)); assert.equal(jobs.size, 0);
+});
 test('an IPv4 override reaches the new address over HTTPS and WSS while retaining the original certificate pin', async t => {
   const { mock, client, target } = await tlsFixture(t, '127.0.0.2');
   const code = encode({ v: 1, ...target, mode: undefined, address: '127.0.0.1' });

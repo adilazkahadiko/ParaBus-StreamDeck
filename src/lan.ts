@@ -35,7 +35,9 @@ export function pinnedSocket(target: Pick<LanConnection, 'address' | 'port' | 'f
     const cleanup = () => { clearTimeout(deadline); signal?.removeEventListener('abort', abort); };
     const fail = (code: 'OFFLINE' | 'CERTIFICATE') => { if (settled) return; settled = true; cleanup(); socket.destroy(); reject(new ApiError(code)); };
     const deadline = setTimeout(() => fail('OFFLINE'), 5000); deadline.unref();
-    tcp.on('error', () => fail('OFFLINE')); socket.on('error', () => fail('CERTIFICATE'));
+    // Transport failures during the handshake are retryable. CERTIFICATE is
+    // reserved for completed-handshake peer checks below.
+    tcp.on('error', () => fail('OFFLINE')); socket.on('error', () => fail('OFFLINE'));
     signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) { abort(); return; }
     socket.once('close', () => { if (!settled) fail('OFFLINE'); });
     socket.once('secureConnect', () => {

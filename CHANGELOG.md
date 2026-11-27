@@ -2,6 +2,8 @@
 
 ## 0.2.0
 
+- Retry handshake resets/disconnections as OFFLINE; reserve CERTIFICATE halts for peer-verification failures after secureConnect.
+
 - Add `parabus1:` LAN connection codes and an IPv4 override. Verify the pinned SHA-256 certificate, validity, self-signature and TLS 1.3 before sending credentials over HTTPS or WSS.
 - Add Output Selector and Selector OFF buttons, short/long release behavior, additive toggles, selected/overlay indicators and permission/error feedback.
 - Preserve existing loopback and action settings. Accept the host's restricted LAN state without participant data.
